@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  smart-fridge:
+    build: .
+    container_name: smart-fridge-iot
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./models:/app/models
+    environment:
+      - FLASK_ENV=production
+      - MODEL_PATH=yolov8n.pt
+    restart: unless-stopped
+    networks:
+      - fridge-network
+    # For Raspberry Pi with GPIO access
+    # devices:
+    #   - /dev/gpiomem:/dev/gpiomem
+    #   - /dev/i2c-1:/dev/i2c-1
+    # privileged: true
+
+networks:
+  fridge-network:
+    driver: bridge
+
+volumes:
+  uploads:
+  models:

@@ -1,0 +1,28 @@
+# Smart Fridge IoT Systemd Service
+# Installation:
+# 1. Copy this file to: sudo cp smart-fridge.service /etc/systemd/system/
+# 2. Reload daemon: sudo systemctl daemon-reload
+# 3. Enable service: sudo systemctl enable smart-fridge
+# 4. Start service: sudo systemctl start smart-fridge
+# 5. Check status: sudo systemctl status smart-fridge
+
+[Unit]
+Description=Smart Fridge IoT System
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/smart-fridge-iot
+Environment="PATH=/home/pi/smart-fridge-iot/venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/home/pi/smart-fridge-iot/venv/bin/python app.py
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=smart-fridge
+
+[Install]
+WantedBy=multi-user.target

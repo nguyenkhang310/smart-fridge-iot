@@ -1,0 +1,14 @@
+Flask==3.0.0
+flask-cors==4.0.0
+ultralytics==8.1.0
+opencv-python==4.9.0.80
+numpy==1.26.3
+Pillow==10.2.0
+mysql-connector-python==8.2.0
+requests==2.31.0
+
+# Optional dependencies for IoT sensors (uncomment if using)
+# Adafruit-DHT==1.4.0  # For DHT22 temperature/humidity sensor
+# RPi.GPIO==0.7.1  # For Raspberry Pi GPIO
+# luma.oled==3.12.0  # For OLED display (SSD1306)
+# paho-mqtt==1.6.1  # For MQTT communication
