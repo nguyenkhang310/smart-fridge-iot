@@ -22,8 +22,41 @@ CORS(app)
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'
-MODEL_PATH = 'yolov8n.pt' 
+MODEL_PATH = 'yolov8n.pt'  # Fallback model
+DETECTION_MODEL_PATH = 'models/fruit_detection.pt'  # Model để detect trái cây
+CLASSIFICATION_MODEL_PATH = 'models/fruit_classification.pt'  # Model để phân loại chín/hỏng
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs('models', exist_ok=True)
+
+# Fruit shelf life information (hạn sử dụng)
+FRUIT_SHELF_LIFE = {
+    "TAO": {
+        "LOAI_DO": "5-7 ngay",     # Táo đỏ tiêu chuẩn
+        "LOAI_XANH": "5 ngay",     # Táo xanh vỏ dày
+        "LOAI_VANG": "3-4 ngay",   # Táo vàng
+        "SAP_HONG": "1 ngay"       # Táo sắp hỏng
+    },
+    "CHUOI": {
+        "XANH": "5-7 ngay",        # Chuối xanh
+        "CHIN": "1-2 ngay",        # Chuối chín
+        "UONG": "3-4 ngay"         # Chuối ương
+    },
+    "XOAI": {
+        "XANH": "8-10 ngay",
+        "CHIN": "2-4 ngay",        # Xoài chín rất dễ hỏng
+        "UONG": "5-7 ngay"
+    },
+    "CAM": {
+        "XANH": "3-4 ngay",        # Cam vỏ dày, để lâu tốt
+        "CHIN": "2 ngay",
+        "UONG": "2-3 ngay"
+    },
+    "LE": {
+        "XANH": "5-7 ngay",
+        "CHIN": "1-2 ngay",        # Lê chín mềm dễ bị úng
+        "UONG": "3-4 ngay"
+    }
+}
 _original_torch_load = torch.load
 
 def _patched_torch_load(*args, **kwargs):
@@ -51,16 +84,129 @@ try:
 except Exception as e:
     print(f"⚠ Note: Could not add safe globals: {e}")
 
-# Load YOLO model
+# Load YOLO models
+model = None  # Fallback model (yolov8n.pt)
+model_detect = None  # Fruit detection model
+model_classify = None  # Fruit classification model (chín/hỏng)
+
+# Try to load advanced models first
 try:
-    model = YOLO(MODEL_PATH)
-    print(f"✓ YOLO model loaded successfully: {MODEL_PATH}")
+    if os.path.exists(DETECTION_MODEL_PATH):
+        model_detect = YOLO(DETECTION_MODEL_PATH)
+        print(f"✓ Fruit detection model loaded: {DETECTION_MODEL_PATH}")
+    else:
+        print(f"⚠ Detection model not found: {DETECTION_MODEL_PATH}")
 except Exception as e:
-    print(f"⚠ Warning: Could not load YOLO model: {e}")
-    print("  Download model using: pip install ultralytics")
-    import traceback
-    traceback.print_exc()
-    model = None
+    print(f"⚠ Could not load detection model: {e}")
+
+try:
+    if os.path.exists(CLASSIFICATION_MODEL_PATH):
+        model_classify = YOLO(CLASSIFICATION_MODEL_PATH)
+        print(f"✓ Fruit classification model loaded: {CLASSIFICATION_MODEL_PATH}")
+    else:
+        print(f"⚠ Classification model not found: {CLASSIFICATION_MODEL_PATH}")
+except Exception as e:
+    print(f"⚠ Could not load classification model: {e}")
+
+# Load fallback model if advanced models not available
+if model_detect is None:
+    try:
+        model = YOLO(MODEL_PATH)
+        print(f"✓ Fallback YOLO model loaded: {MODEL_PATH}")
+    except Exception as e:
+        print(f"⚠ Warning: Could not load fallback YOLO model: {e}")
+        import traceback
+        traceback.print_exc()
+        model = None
+
+# Fruit ripeness analysis functions
+def analyze_ripeness_specific(img_crop, fruit_type):
+    """
+    Phân tích độ chín của trái cây dựa trên màu sắc HSV
+    Returns: (status_display, days_left)
+    """
+    if img_crop is None or getattr(img_crop, "size", 0) == 0:
+        return "Unknown", "?"
+
+    # Làm mờ nhẹ
+    img_crop = cv2.GaussianBlur(img_crop, (5, 5), 0)
+    hsv = cv2.cvtColor(img_crop, cv2.COLOR_BGR2HSV)
+    
+    # Tạo mặt nạ (Mask)
+    mask = cv2.inRange(hsv, np.array([0, 40, 30]), np.array([180, 255, 255]))
+    
+    if cv2.countNonZero(mask) < 50:
+        return "No Color", "?"
+
+    # Tính histogram
+    hist = cv2.calcHist([hsv], [0], mask, [180], [0, 180])
+    hue_peak = np.argmax(hist)  # Tìm màu chủ đạo
+
+    # Giá trị mặc định
+    status_display = "Unknown"
+    stage_key = "BINH_THUONG"
+    
+    # === NHÓM 1: CHUỐI, XOÀI, LÊ ===
+    if fruit_type in ['CHUOI', 'XOAI', 'LE']:
+        if 35 <= hue_peak < 90:
+            status_display = "SONG"
+            stage_key = "XANH"
+        elif 25 <= hue_peak < 35:
+            status_display = "UONG"
+            stage_key = "UONG"
+        elif 10 <= hue_peak < 25:
+            status_display = "CHIN"
+            stage_key = "CHIN"
+        elif hue_peak < 10 or hue_peak > 160:
+            status_display = "CHIN"
+            stage_key = "CHIN"
+            
+    # === NHÓM 2: CAM ===
+    elif fruit_type == 'CAM':
+        if hue_peak > 30:
+            status_display = "SONG"
+            stage_key = "XANH"
+        elif 10 <= hue_peak <= 30:
+            status_display = "CHIN"
+            stage_key = "CHIN"
+        else:
+            status_display = "CHIN"
+            stage_key = "CHIN"
+
+    # === NHÓM 3: TÁO ===
+    elif fruit_type == 'TAO':
+        # Táo đỏ
+        if hue_peak < 15 or hue_peak > 160:
+            status_display = "CHIN"
+            stage_key = "LOAI_DO"
+        # Táo xanh
+        elif 15 <= hue_peak < 90:
+            status_display = "CHIN"
+            stage_key = "LOAI_XANH"
+        # Táo vàng
+        else:
+            status_display = "CHIN"
+            stage_key = "LOAI_VANG"
+
+    # Tra cứu hạn sử dụng
+    days_left = "?"
+    if fruit_type in FRUIT_SHELF_LIFE:
+        days_left = FRUIT_SHELF_LIFE[fruit_type].get(stage_key, "?")
+    
+    return status_display, days_left
+
+def preprocess_image(frame):
+    """Preprocess image để cải thiện chất lượng detection"""
+    lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    l_balanced = clahe.apply(l)
+    merged_lab = cv2.merge((l_balanced, a, b))
+    frame_balanced = cv2.cvtColor(merged_lab, cv2.COLOR_LAB2BGR)
+    blurred = cv2.GaussianBlur(frame, (7, 7), 0)
+    kernel_sharpening = np.array([[-1, -1, -1], [-1,  9, -1], [-1, -1, -1]])
+    sharpened = cv2.filter2D(blurred, -1, kernel_sharpening)
+    return sharpened
 
 # Import hardware integration (optional)
 try:
@@ -134,8 +280,20 @@ inventory = {
 
 # Fruit and food categories based on COCO dataset
 FRUIT_CLASSES = ['apple', 'banana', 'orange', 'broccoli', 'carrot']
-FOOD_CLASSES = ['sandwich', 'hot dog', 'pizza', 'donut', 'cake', 'bottle', 
-                'cup', 'fork', 'knife', 'spoon', 'bowl']
+FOOD_CLASSES = ['sandwich', 'hot dog', 'pizza', 'donut', 'cake']
+# Vật dụng trong tủ lạnh
+ITEM_CLASSES = ['bottle', 'cup', 'fork', 'knife', 'spoon', 'bowl', 'water bottle', 'chai nuoc']
+# Tên tiếng Việt cho vật dụng
+ITEM_NAMES_VI = {
+    'bottle': 'Chai nước',
+    'water bottle': 'Chai nước',
+    'chai nuoc': 'Chai nước',
+    'cup': 'Cốc',
+    'bowl': 'Bát',
+    'fork': 'Nĩa',
+    'knife': 'Dao',
+    'spoon': 'Thìa'
+}
 
 # Camera stream variables
 camera_stream = None
@@ -279,8 +437,8 @@ def generate_frames():
     print(f"🛑 Stream stopped. Total frames: {frame_count}")
 
 def generate_frames_with_detection():
-    """Generate video frames with YOLO detection"""
-    global camera_stream, stream_active, model
+    """Generate video frames with advanced YOLO detection (ripeness detection)"""
+    global camera_stream, stream_active, model, model_detect, model_classify
     
     while stream_active:
         with camera_lock:
@@ -291,13 +449,124 @@ def generate_frames_with_detection():
             if not success:
                 break
         
-        if frame is not None and model is not None:
+        if frame is not None:
             try:
-                # Run YOLO detection
-                results = model(frame, conf=0.5, verbose=False)
-                # Draw results on frame
-                annotated_frame = results[0].plot()
-            except:
+                # Preprocess if using advanced models
+                processed_frame = preprocess_image(frame) if model_detect is not None else frame
+                
+                # Use advanced 2-stage detection if available
+                use_advanced = model_detect is not None and model_classify is not None
+                
+                if use_advanced:
+                    # Stage 1: Detection
+                    results = model_detect(processed_frame, conf=0.5, verbose=False)
+                    annotated_frame = processed_frame.copy()
+                    
+                    # Stage 2: Classification and drawing
+                    for result in results:
+                        boxes = result.boxes
+                        for box in boxes:
+                            x1, y1, x2, y2 = map(int, box.xyxy[0].cpu().numpy())
+                            w, h = x2 - x1, y2 - y1
+                            confidence = float(box.conf[0].cpu().numpy())
+                            
+                            # Crop for classification
+                            crop = processed_frame[max(0, y1):min(processed_frame.shape[0], y2), 
+                                                   max(0, x1):min(processed_frame.shape[1], x2)]
+                            
+                            if crop.size == 0:
+                                continue
+                            
+                            # Get class name from detection model first
+                            class_name = "Unknown"
+                            category = 'other'
+                            ripeness_status = None
+                            days_left = None
+                            is_rotten = False
+                            
+                            try:
+                                class_id = int(box.cls[0].cpu().numpy())
+                                class_name = result.names[class_id]
+                            except:
+                                pass
+                            
+                            # Check if it's a fruit
+                            class_name_lower = class_name.lower()
+                            is_fruit = (class_name_lower in FRUIT_CLASSES or 
+                                       any(fruit in class_name.upper() for fruit in ['TAO', 'CHUOI', 'XOAI', 'CAM', 'LE']))
+                            
+                            # Only classify fruits
+                            if is_fruit:
+                                try:
+                                    res_cls = model_classify(crop, verbose=False)
+                                    cls_name = res_cls[0].names[res_cls[0].probs.top1]
+                                    cls_conf = res_cls[0].probs.top1conf.item() * 100
+                                    
+                                    parts = cls_name.split('_')
+                                    fruit_base = parts[0].upper()
+                                    is_rotten = 'khong' not in cls_name and 'hong' in cls_name
+                                    
+                                    if is_rotten:
+                                        class_name = f"{fruit_base}: HONG"
+                                        ripeness_status = "HONG"
+                                        days_left = "0 ngay"
+                                        category = 'fruit'
+                                    else:
+                                        ripeness_status, days_left = analyze_ripeness_specific(crop, fruit_base)
+                                        class_name = f"{fruit_base}: {ripeness_status}"
+                                        category = 'fruit'
+                                except Exception as e:
+                                    category = 'fruit'
+                            else:
+                                # Handle items/utensils
+                                if class_name_lower in ITEM_CLASSES:
+                                    category = 'item'
+                                    if class_name_lower in ITEM_NAMES_VI:
+                                        class_name = ITEM_NAMES_VI[class_name_lower]
+                                elif class_name_lower in FOOD_CLASSES:
+                                    category = 'food'
+                            
+                            # Draw bounding box with color coding
+                            if is_rotten:
+                                color = (0, 0, 255)  # Red for rotten
+                            elif ripeness_status:
+                                color = (0, 255, 0)  # Green for good fruit
+                            elif category == 'item':
+                                color = (255, 165, 0)  # Orange for items
+                            elif category == 'food':
+                                color = (255, 200, 0)  # Yellow for food
+                            else:
+                                color = (200, 200, 200)  # Gray for unknown
+                            
+                            cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
+                            
+                            # Draw label
+                            label = f"{class_name} ({confidence:.0f}%)"
+                            if days_left:
+                                label += f" - {days_left}"
+                            
+                            font_scale = 0.6 if w > 150 else 0.4
+                            thickness = 2 if w > 150 else 1
+                            (w_label, h_label), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+                            
+                            if y1 < 50:
+                                y_draw = y2 + 20
+                                cv2.rectangle(annotated_frame, (x1, y2), (x1 + w_label + 10, y2 + h_label + 15), color, -1)
+                                cv2.putText(annotated_frame, label, (x1 + 5, y2 + h_label + 10), 
+                                           cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness)
+                            else:
+                                cv2.rectangle(annotated_frame, (x1, y1 - h_label - 15), (x1 + w_label + 10, y1), color, -1)
+                                cv2.putText(annotated_frame, label, (x1 + 5, y1 - 5), 
+                                           cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness)
+                else:
+                    # Fallback to basic model
+                    if model is not None:
+                        results = model(frame, conf=0.5, verbose=False)
+                        annotated_frame = results[0].plot()
+                    else:
+                        annotated_frame = frame
+            except Exception as e:
+                print(f"⚠ Error in detection: {e}")
                 annotated_frame = frame
         else:
             annotated_frame = frame
@@ -482,8 +751,9 @@ def get_oled_data():
 
 @app.route('/api/detect', methods=['POST'])
 def detect_objects():
-    """YOLO object detection endpoint"""
-    if model is None:
+    """YOLO object detection endpoint with advanced fruit ripeness detection"""
+    # Check if models are available
+    if model_detect is None and model is None:
         return jsonify({
             'error': 'YOLO model not loaded',
             'message': 'Please install ultralytics and download model'
@@ -500,35 +770,115 @@ def detect_objects():
         nparr = np.frombuffer(image_bytes, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         
-        # Run YOLO detection
-        results = model(img, conf=0.5)  # Confidence threshold 0.5
+        # Preprocess image if using advanced models
+        if model_detect is not None:
+            img = preprocess_image(img)
+        
+        # Use advanced 2-stage detection if available, otherwise fallback
+        use_advanced = model_detect is not None and model_classify is not None
+        
+        if use_advanced:
+            # Stage 1: Detection - find fruits
+            results = model_detect(img, conf=0.5, verbose=False)
+        else:
+            # Fallback to basic model
+            results = model(img, conf=0.5)
         
         # Process results
         detections = []
         fruits = []
         foods = []
         other = []
+        annotated_img = img.copy()
         
         for result in results:
             boxes = result.boxes
             for box in boxes:
                 # Get box coordinates
-                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                x1, y1, x2, y2 = map(int, box.xyxy[0].cpu().numpy())
+                w, h = x2 - x1, y2 - y1
                 confidence = float(box.conf[0].cpu().numpy())
-                class_id = int(box.cls[0].cpu().numpy())
-                class_name = model.names[class_id]
+                
+                # Crop image for classification
+                crop = img[max(0, y1):min(img.shape[0], y2), max(0, x1):min(img.shape[1], x2)]
+                
+                if crop.size == 0:
+                    continue
+                
+                # Initialize detection info
+                class_name = "Unknown"
+                category = 'other'
+                ripeness_status = None
+                days_left = None
+                is_rotten = False
+                classification_confidence = 0
+                is_fruit = False
+                
+                # First, get class name from detection model
+                try:
+                    if use_advanced:
+                        class_id = int(box.cls[0].cpu().numpy())
+                        class_name = result.names[class_id]
+                    else:
+                        class_id = int(box.cls[0].cpu().numpy())
+                        class_name = model.names[class_id]
+                except:
+                    pass
+                
+                # Check if it's a fruit (for classification)
+                class_name_lower = class_name.lower()
+                is_fruit = (class_name_lower in FRUIT_CLASSES or 
+                           any(fruit in class_name.upper() for fruit in ['TAO', 'CHUOI', 'XOAI', 'CAM', 'LE']))
+                
+                # Only use classification for fruits
+                if use_advanced and is_fruit:
+                    # Stage 2: Classification - determine ripeness/spoilage for fruits only
+                    try:
+                        res_cls = model_classify(crop, verbose=False)
+                        cls_name = res_cls[0].names[res_cls[0].probs.top1]
+                        classification_confidence = res_cls[0].probs.top1conf.item() * 100
+                        
+                        # Parse classification result
+                        parts = cls_name.split('_')
+                        fruit_base = parts[0].upper()
+                        is_rotten = 'khong' not in cls_name and 'hong' in cls_name
+                        
+                        if is_rotten:
+                            # Fruit is rotten
+                            class_name = f"{fruit_base} (HỎNG)"
+                            category = 'fruit'
+                            ripeness_status = "HONG"
+                            days_left = "0 ngay"
+                        else:
+                            # Analyze ripeness
+                            ripeness_status, days_left = analyze_ripeness_specific(crop, fruit_base)
+                            class_name = f"{fruit_base} ({ripeness_status})"
+                            category = 'fruit'
+                    except Exception as e:
+                        print(f"⚠ Classification error: {e}")
+                        # Keep original class_name from detection
+                        category = 'fruit'
                 
                 # Categorize object
-                if class_name.lower() in FRUIT_CLASSES:
-                    category = 'fruit'
+                if category == 'other':
+                    if is_fruit:
+                        category = 'fruit'
+                        fruits.append(class_name)
+                    elif class_name_lower in FOOD_CLASSES:
+                        category = 'food'
+                        foods.append(class_name)
+                    elif class_name_lower in ITEM_CLASSES:
+                        category = 'item'
+                        # Use Vietnamese name if available
+                        if class_name_lower in ITEM_NAMES_VI:
+                            class_name = ITEM_NAMES_VI[class_name_lower]
+                        other.append(class_name)
+                    else:
+                        other.append(class_name)
+                elif category == 'fruit':
                     fruits.append(class_name)
-                elif class_name.lower() in FOOD_CLASSES:
-                    category = 'food'
-                    foods.append(class_name)
-                else:
-                    category = 'other'
-                    other.append(class_name)
                 
+                # Build detection object
                 detection = {
                     'class': class_name,
                     'confidence': round(confidence, 2),
@@ -536,11 +886,59 @@ def detect_objects():
                     'bbox': {
                         'x': int(x1),
                         'y': int(y1),
-                        'width': int(x2 - x1),
-                        'height': int(y2 - y1)
+                        'width': int(w),
+                        'height': int(h)
                     }
                 }
+                
+                # Add advanced info if available
+                if ripeness_status:
+                    detection['ripeness_status'] = ripeness_status
+                if days_left:
+                    detection['days_left'] = days_left
+                if is_rotten:
+                    detection['is_rotten'] = True
+                if classification_confidence > 0:
+                    detection['classification_confidence'] = round(classification_confidence, 2)
+                
                 detections.append(detection)
+                
+                # Draw bounding box with color coding
+                if is_rotten:
+                    color = (0, 0, 255)  # Red for rotten fruit
+                elif ripeness_status:
+                    color = (0, 255, 0)  # Green for good fruit
+                elif category == 'item':
+                    color = (255, 165, 0)  # Orange for items/utensils
+                elif category == 'food':
+                    color = (255, 200, 0)  # Yellow for food
+                else:
+                    color = (200, 200, 200)  # Gray for unknown
+                
+                cv2.rectangle(annotated_img, (x1, y1), (x2, y2), color, 2)
+                
+                # Draw label
+                label = f"{class_name} ({confidence:.0f}%)"
+                if ripeness_status:
+                    label = f"{class_name.split('(')[0]}: {ripeness_status} ({confidence:.0f}%)"
+                if days_left:
+                    label += f" - Hạn: {days_left}"
+                
+                # Calculate font size
+                font_scale = 0.6 if w > 150 else 0.4
+                thickness = 2 if w > 150 else 1
+                (w_label, h_label), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+                
+                # Draw label background and text
+                if y1 < 50:
+                    y_draw = y2 + 20
+                    cv2.rectangle(annotated_img, (x1, y2), (x1 + w_label + 10, y2 + h_label + 15), color, -1)
+                    cv2.putText(annotated_img, label, (x1 + 5, y2 + h_label + 10), 
+                               cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness)
+                else:
+                    cv2.rectangle(annotated_img, (x1, y1 - h_label - 15), (x1 + w_label + 10, y1), color, -1)
+                    cv2.putText(annotated_img, label, (x1 + 5, y1 - 5), 
+                               cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness)
         
         # Update inventory
         inventory['total_items'] = len(detections)
@@ -554,7 +952,7 @@ def detect_objects():
         try:
             image_filename = f"detection_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
             image_path = os.path.join(UPLOAD_FOLDER, image_filename)
-            cv2.imwrite(image_path, img)
+            cv2.imwrite(image_path, annotated_img)
         except Exception as e:
             print(f"⚠ Error saving image: {e}")
         
@@ -592,9 +990,6 @@ def detect_objects():
             except Exception as e:
                 print(f"⚠ Error saving detection to database: {e}")
         
-        # Draw bounding boxes on image
-        annotated_img = results[0].plot()
-        
         # Convert to base64 for returning
         _, buffer = cv2.imencode('.jpg', annotated_img)
         img_base64 = base64.b64encode(buffer).decode('utf-8')
@@ -609,10 +1004,13 @@ def detect_objects():
             'annotated_image': img_base64,
             'timestamp': datetime.now().isoformat(),
             'session_id': session_id,
-            'saved_to_db': DB_AVAILABLE and session_id is not None
+            'saved_to_db': DB_AVAILABLE and session_id is not None,
+            'advanced_mode': use_advanced
         })
         
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({
             'error': str(e),
             'message': 'Failed to process image'
