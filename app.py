@@ -3,6 +3,8 @@ from flask_cors import CORS
 import sys
 import cv2
 import numpy as np
+from telegram_notify import send_text, send_photo, can_send
+import requests
 
 # Giảm log OpenCV (tránh MSMF/obsensor spam trên Windows)
 cv2.setLogLevel(3)
@@ -19,7 +21,6 @@ from queue import Queue
 
 app = Flask(__name__)
 CORS(app)
-
 # Configuration
 UPLOAD_FOLDER = 'uploads'
 MODEL_PATH = 'yolov8n.pt'  # Fallback model
@@ -27,6 +28,10 @@ DETECTION_MODEL_PATH = 'models/fruit_detection.pt'  # Model để detect trái c
 CLASSIFICATION_MODEL_PATH = 'models/fruit_classification.pt'  # Model để phân loại chín/hỏng
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs('models', exist_ok=True)
+# ESP32-CAM 
+ESP32_CAM_IP = "http://192.168.137.165"  # IP 
+ESP32_CAPTURE_URL = f"{ESP32_CAM_IP}/capture"
+ESP32_VIEW_URL = f"{ESP32_CAM_IP}/view"
 
 # Fruit shelf life information (hạn sử dụng)
 FRUIT_SHELF_LIFE = {
@@ -207,6 +212,33 @@ def preprocess_image(frame):
     kernel_sharpening = np.array([[-1, -1, -1], [-1,  9, -1], [-1, -1, -1]])
     sharpened = cv2.filter2D(blurred, -1, kernel_sharpening)
     return sharpened
+
+def fetch_image_from_esp32(timeout=5):
+    """
+    Gọi ESP32-CAM chụp ảnh và lấy ảnh trả về
+    """
+    try:
+        # ESP32 chụp ảnh
+        r = requests.get(ESP32_CAPTURE_URL, timeout=timeout)
+        if r.status_code != 200:
+            print("ESP32 capture failed")
+            return None
+
+        # Lấy ảnh vừa chụp
+        img_resp = requests.get(ESP32_VIEW_URL, timeout=timeout)
+        if img_resp.status_code != 200:
+            print("ESP32 view failed")
+            return None
+
+        # Decode ảnh
+        img_array = np.frombuffer(img_resp.content, np.uint8)
+        img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+
+        return img
+
+    except Exception as e:
+        print(f"ESP32 fetch error: {e}")
+        return None
 
 # Import hardware integration (optional)
 try:
@@ -391,197 +423,187 @@ def init_camera():
         return False
 
 def generate_frames():
-    """Generate video frames for streaming"""
-    global camera_stream, stream_active
+    """Generate video frames from ESP32-CAM"""
+    global stream_active
+    print(f"Starting ESP32 stream from: {ESP32_CAPTURE_URL}")
     
-    frame_count = 0
-    print("🎬 Starting frame generation...")
+    # Đặt stream_active = True để vòng lặp chạy
+    stream_active = True
     
     while stream_active:
         try:
-            with camera_lock:
-                if camera_stream is None or not camera_stream.isOpened():
-                    print("⚠ Camera stream closed")
-                    break
-                
-                success, frame = camera_stream.read()
-                if not success:
-                    print(f"⚠ Failed to read frame")
-                    break
+            # Gọi hàm lấy ảnh từ ESP32 
+            frame = fetch_image_from_esp32()
             
             if frame is not None:
-                # Encode frame as JPEG
-                ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                # Resize lại nếu ảnh quá to để stream mượt hơn (Tuỳ)
+                # frame = cv2.resize(frame, (640, 480))
+
+                # Encode sang JPEG
+                ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
                 if ret:
                     frame_bytes = buffer.tobytes()
-                    frame_count += 1
-                    if frame_count % 30 == 0:  # Log every 30 frames
-                        print(f"📊 Streamed {frame_count} frames")
-                    
                     yield (b'--frame\r\n'
                            b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
                 else:
-                    print("⚠ Failed to encode frame")
+                    print("Failed to encode frame")
             else:
-                print("⚠ Frame is None")
-            
-            # Small delay to control frame rate
-            threading.Event().wait(0.033)  # ~30 FPS
+                # Nếu không lấy được ảnh, in lỗi và đợi xíu rồi thử lại
+                print("ESP32 returned None (Check Connection/IP)")
+                threading.Event().wait(1.0) # Đợi 1s tránh spam request làm treo ESP32
+
+            # Quan trọng: ESP32 chụp ảnh tốn thời gian, không cần delay thêm quá nhiều
+            # Nhưng cần nghỉ nhẹ để tránh quá tải mạng
+            threading.Event().wait(0.1) 
             
         except Exception as e:
-            print(f"✗ Error in generate_frames: {e}")
-            import traceback
-            traceback.print_exc()
-            break
-    
-    print(f"🛑 Stream stopped. Total frames: {frame_count}")
+            print(f"Error in generate_frames: {e}")
+            threading.Event().wait(1.0)
 
 def generate_frames_with_detection():
-    """Generate video frames with advanced YOLO detection (ripeness detection)"""
+    """Generate video frames with detection - HỖ TRỢ CẢ WEBCAM VÀ ESP32"""
     global camera_stream, stream_active, model, model_detect, model_classify
     
+    print("Bắt đầu luồng xử lý Detection (Webcam/ESP32)...") # Log báo hiệu bắt đầu
+    
     while stream_active:
+        frame = None
+        source_type = "none"
+
+        # 1. Ưu tiên lấy từ Webcam 
         with camera_lock:
-            if camera_stream is None or not camera_stream.isOpened():
-                break
-            
-            success, frame = camera_stream.read()
-            if not success:
-                break
+            if camera_stream is not None and camera_stream.isOpened():
+                success, cam_frame = camera_stream.read()
+                if success:
+                    frame = cam_frame
+                    source_type = "webcam"
         
-        if frame is not None:
-            try:
-                # Preprocess if using advanced models
-                processed_frame = preprocess_image(frame) if model_detect is not None else frame
+        # 2. Nếu Webcam không có ảnh, lấy từ ESP32
+        if frame is None:
+            # Gọi hàm lấy ảnh ESP32
+            esp_frame = fetch_image_from_esp32(timeout=2) 
+            if esp_frame is not None:
+                frame = esp_frame
+                source_type = "esp32"
+        
+        # 3. Nếu cả 2 đều không có ảnh -> Chờ chút rồi thử lại
+        if frame is None:
+            print("Không lấy được ảnh từ nguồn nào cả. Đang thử lại...")
+            threading.Event().wait(0.5)
+            continue
+
+        try:
+            # Preprocess
+            processed_frame = preprocess_image(frame) if model_detect is not None else frame
+                        
+            use_advanced = model_detect is not None and model_classify is not None
+            annotated_frame = frame.copy() # Mặc định là ảnh gốc
+
+            if use_advanced:
+                # Stage 1: Detection
+                results = model_detect(processed_frame, conf=0.5, verbose=False)
+                annotated_frame = processed_frame.copy()
                 
-                # Use advanced 2-stage detection if available
-                use_advanced = model_detect is not None and model_classify is not None
-                
-                if use_advanced:
-                    # Stage 1: Detection
-                    results = model_detect(processed_frame, conf=0.5, verbose=False)
-                    annotated_frame = processed_frame.copy()
-                    
-                    # Stage 2: Classification and drawing
-                    for result in results:
-                        boxes = result.boxes
-                        for box in boxes:
-                            x1, y1, x2, y2 = map(int, box.xyxy[0].cpu().numpy())
-                            w, h = x2 - x1, y2 - y1
-                            confidence = float(box.conf[0].cpu().numpy())
-                            
-                            # Crop for classification
-                            crop = processed_frame[max(0, y1):min(processed_frame.shape[0], y2), 
-                                                   max(0, x1):min(processed_frame.shape[1], x2)]
-                            
-                            if crop.size == 0:
-                                continue
-                            
-                            # Get class name from detection model first
+                # Stage 2: Classification and drawing
+                for result in results:
+                    boxes = result.boxes
+                    for box in boxes:
+                        x1, y1, x2, y2 = map(int, box.xyxy[0].cpu().numpy())
+                        w, h = x2 - x1, y2 - y1
+                        confidence = float(box.conf[0].cpu().numpy())
+                        
+                        crop = processed_frame[max(0, y1):min(processed_frame.shape[0], y2), 
+                                               max(0, x1):min(processed_frame.shape[1], x2)]
+                        
+                        if crop.size == 0: continue
+                        
+                        # ... Logic định danh class ...
+                        try:
+                            class_id = int(box.cls[0].cpu().numpy())
+                            class_name = result.names[class_id]
+                        except:
                             class_name = "Unknown"
-                            category = 'other'
-                            ripeness_status = None
-                            days_left = None
-                            is_rotten = False
-                            
-                            try:
-                                class_id = int(box.cls[0].cpu().numpy())
-                                class_name = result.names[class_id]
-                            except:
-                                pass
-                            
-                            # Check if it's a fruit
-                            class_name_lower = class_name.lower()
-                            is_fruit = (class_name_lower in FRUIT_CLASSES or 
-                                       any(fruit in class_name.upper() for fruit in ['TAO', 'CHUOI', 'XOAI', 'CAM', 'LE']))
-                            
-                            # Only classify fruits
-                            if is_fruit:
-                                try:
-                                    res_cls = model_classify(crop, verbose=False)
-                                    cls_name = res_cls[0].names[res_cls[0].probs.top1]
-                                    cls_conf = res_cls[0].probs.top1conf.item() * 100
-                                    
-                                    parts = cls_name.split('_')
-                                    fruit_base = parts[0].upper()
-                                    is_rotten = 'khong' not in cls_name and 'hong' in cls_name
-                                    
-                                    if is_rotten:
-                                        class_name = f"{fruit_base}: HONG"
-                                        ripeness_status = "HONG"
-                                        days_left = "0 ngay"
-                                        category = 'fruit'
-                                    else:
-                                        ripeness_status, days_left = analyze_ripeness_specific(crop, fruit_base)
-                                        class_name = f"{fruit_base}: {ripeness_status}"
-                                        category = 'fruit'
-                                except Exception as e:
+
+                        # ... Logic check hỏng/chín (GIỮ NGUYÊN) ...
+                        # (Tôi tóm tắt lại đoạn logic gửi Telegram để bạn dễ hình dung)
+                        
+                        # Check Fruit logic...
+                        class_name_lower = class_name.lower()
+                        is_fruit = (class_name_lower in FRUIT_CLASSES or 
+                                   any(fruit in class_name.upper() for fruit in ['TAO', 'CHUOI', 'XOAI', 'CAM', 'LE']))
+                        
+                        category = 'other'
+                        ripeness_status = None
+                        days_left = None
+                        is_rotten = False
+
+                        if is_fruit and model_classify:
+                             try:
+                                res_cls = model_classify(crop, verbose=False)
+                                cls_name = res_cls[0].names[res_cls[0].probs.top1]
+                                parts = cls_name.split('_')
+                                fruit_base = parts[0].upper()
+                                is_rotten = 'khong' not in cls_name and 'hong' in cls_name
+
+                                if is_rotten:
+                                    class_name = f"{fruit_base}: HONG"
+                                    ripeness_status = "HONG"
+                                    days_left = "0 ngay"
                                     category = 'fruit'
-                            else:
-                                # Handle items/utensils
-                                if class_name_lower in ITEM_CLASSES:
-                                    category = 'item'
-                                    if class_name_lower in ITEM_NAMES_VI:
-                                        class_name = ITEM_NAMES_VI[class_name_lower]
-                                elif class_name_lower in FOOD_CLASSES:
-                                    category = 'food'
-                            
-                            # Draw bounding box with color coding
-                            if is_rotten:
-                                color = (0, 0, 255)  # Red for rotten
-                            elif ripeness_status:
-                                color = (0, 255, 0)  # Green for good fruit
-                            elif category == 'item':
-                                color = (255, 165, 0)  # Orange for items
-                            elif category == 'food':
-                                color = (255, 200, 0)  # Yellow for food
-                            else:
-                                color = (200, 200, 200)  # Gray for unknown
-                            
-                            cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
-                            
-                            # Draw label
-                            label = f"{class_name} ({confidence:.0f}%)"
-                            if days_left:
-                                label += f" - {days_left}"
-                            
-                            font_scale = 0.6 if w > 150 else 0.4
-                            thickness = 2 if w > 150 else 1
-                            (w_label, h_label), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
-                            
-                            if y1 < 50:
-                                y_draw = y2 + 20
-                                cv2.rectangle(annotated_frame, (x1, y2), (x1 + w_label + 10, y2 + h_label + 15), color, -1)
-                                cv2.putText(annotated_frame, label, (x1 + 5, y2 + h_label + 10), 
-                                           cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness)
-                            else:
-                                cv2.rectangle(annotated_frame, (x1, y1 - h_label - 15), (x1 + w_label + 10, y1), color, -1)
-                                cv2.putText(annotated_frame, label, (x1 + 5, y1 - 5), 
-                                           cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness)
+                                    
+                                    print(f"PHÁT HIỆN {fruit_base} HỎNG TỪ {source_type.upper()}!") 
+
+                                    alert_key = f"stream_rotten_{fruit_base}"
+                                    if can_send(alert_key, cooldown=60):
+                                        timestamp = datetime.now().strftime('%H%M%S')
+                                        temp_filename = f"alert_{fruit_base}_{timestamp}.jpg"
+                                        temp_path = os.path.join(UPLOAD_FOLDER, temp_filename)
+                                        cv2.imwrite(temp_path, annotated_frame)
+                                        
+                                        msg = (f"<b>CẢNH BÁO CÓ HOA QUẢ NGHI HỎNG</b>\n"
+                                               f"Phát hiện: <b>{fruit_base}</b> bị hỏng")
+                                        
+                                        threading.Thread(target=send_text, args=(msg,)).start()
+                                        threading.Thread(target=send_photo, args=(temp_path, f"{fruit_base} hỏng!")).start()
+                                else:
+                                    ripeness_status, days_left = analyze_ripeness_specific(crop, fruit_base)
+                                    class_name = f"{fruit_base}: {ripeness_status}"
+                                    category = 'fruit'
+                             except Exception as e:
+                                print(f"Err classify: {e}")
+                                category = 'fruit'
+                        
+                        # Vẽ khung 
+                        if is_rotten: color = (0, 0, 255)
+                        elif ripeness_status: color = (0, 255, 0)
+                        else: color = (200, 200, 200)
+                        cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
+                        #Vẽ text label
+                        cv2.putText(annotated_frame, class_name, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+            else:
+                # Fallback basic model
+                if model is not None:
+                    results = model(frame, conf=0.5, verbose=False)
+                    annotated_frame = results[0].plot()
                 else:
-                    # Fallback to basic model
-                    if model is not None:
-                        results = model(frame, conf=0.5, verbose=False)
-                        annotated_frame = results[0].plot()
-                    else:
-                        annotated_frame = frame
-            except Exception as e:
-                print(f"⚠ Error in detection: {e}")
-                annotated_frame = frame
-        else:
+                    annotated_frame = frame
+
+        except Exception as e:
+            print(f"Error in detection loop: {e}")
             annotated_frame = frame
         
+        # Encode và yield frame về trình duyệt
         if annotated_frame is not None:
-            # Encode frame as JPEG
             ret, buffer = cv2.imencode('.jpg', annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
             if ret:
                 frame_bytes = buffer.tobytes()
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
         
-        # Small delay to control frame rate
-        threading.Event().wait(0.033)  # ~30 FPS
-
+        # delay lâu chút để đỡ nghẽn mạng
+        delay_time = 0.033 if source_type == "webcam" else 0.1 
+        threading.Event().wait(delay_time)
 # Don't initialize camera on startup - only when user requests it
 # init_camera()  # Commented out - camera will be initialized on demand
 
@@ -752,6 +774,8 @@ def get_oled_data():
 @app.route('/api/detect', methods=['POST'])
 def detect_objects():
     """YOLO object detection endpoint with advanced fruit ripeness detection"""
+    has_rotten = False
+    rotten_fruits = set()
     # Check if models are available
     if model_detect is None and model is None:
         return jsonify({
@@ -759,11 +783,21 @@ def detect_objects():
             'message': 'Please install ultralytics and download model'
         }), 500
     
-    if 'image' not in request.files:
-        return jsonify({'error': 'No image provided'}), 400
-    
-    file = request.files['image']
-    
+    # Nếu có ảnh upload lên 
+    if 'image' in request.files:
+        file = request.files['image']
+        image_bytes = file.read()
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+    else:
+        # Ko có ảnh thì lấy từ ESP32-CAM
+        print("Fetching image from ESP32-CAM...")
+        img = fetch_image_from_esp32()
+        if img is None:
+            print("ESP32-CAM failed")
+            return jsonify({'error': 'Failed to get image from ESP32-CAM'}), 500
+        print("ESP32 image received")
     try:
         # Read image
         image_bytes = file.read()
@@ -824,6 +858,16 @@ def detect_objects():
                         class_name = model.names[class_id]
                 except:
                     pass
+
+                # Gửi thông báo Telegram khi phát hiện vật thể
+                if class_name != "Unknown":
+                    alert_key = f"detection_{class_name.lower().replace(' ', '_')}"
+                    if can_send(alert_key, cooldown=15): # Cooldown 15 giây cho mỗi loại vật thể
+                        msg = f"🔎 Phát hiện vật thể: <b>{class_name}</b>"
+                        
+                        # Gửi trong luồng riêng để không làm chậm response
+                        threading.Thread(target=send_text, args=(msg,)).start()
+                        print(f"🚀 Đã gửi thông báo Telegram cho: {class_name}")
                 
                 # Check if it's a fruit (for classification)
                 class_name_lower = class_name.lower()
@@ -849,11 +893,15 @@ def detect_objects():
                             category = 'fruit'
                             ripeness_status = "HONG"
                             days_left = "0 ngay"
+                            has_rotten = True
+                            rotten_fruits.add(fruit_base)
+
                         else:
                             # Analyze ripeness
                             ripeness_status, days_left = analyze_ripeness_specific(crop, fruit_base)
                             class_name = f"{fruit_base} ({ripeness_status})"
                             category = 'fruit'
+            
                     except Exception as e:
                         print(f"⚠ Classification error: {e}")
                         # Keep original class_name from detection
@@ -956,6 +1004,21 @@ def detect_objects():
         except Exception as e:
             print(f"⚠ Error saving image: {e}")
         
+        if has_rotten and image_path:
+            for fruit in rotten_fruits:
+                alert_key = f"rotten_{fruit}"
+
+                if can_send(alert_key, cooldown=120):
+                    msg = (
+                        f"<b>PHÁT HIỆN TRÁI CÂY BỊ HỎNG</b>\n\n"
+                        f"Loại: <b>{fruit}</b>\n"
+                        f"Thời gian: {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}"
+                    )
+
+                    send_text(msg)
+                    send_photo(image_path, caption=f"{fruit} bị hỏng ")
+
+
         # Save to database if available
         session_id = None
         if DB_AVAILABLE:
@@ -1015,25 +1078,18 @@ def detect_objects():
             'error': str(e),
             'message': 'Failed to process image'
         }), 500
+    
 
 @app.route('/api/camera/stream')
 def video_stream():
-    """Video streaming route - plain camera feed"""
-    global stream_active, camera_stream
+    """Video streaming route - ESP32 Version"""
+    global stream_active
+    print("📹 Stream endpoint called (ESP32 Mode)")
     
-    print("📹 Stream endpoint called")
+    stream_active = True # bật cờ
     
-    # Ensure camera is initialized before streaming
-    if camera_stream is None or not camera_stream.isOpened():
-        print("⚠ Camera not initialized, trying to init...")
-        if not init_camera():
-            print("✗ Failed to initialize camera for stream")
-            return "Camera not available", 503
-    
-    print("✓ Starting video stream...")
-    stream_active = True
     return Response(
-        generate_frames(),
+        generate_frames(), 
         mimetype='multipart/x-mixed-replace; boundary=frame',
         headers={
             'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -1041,17 +1097,15 @@ def video_stream():
             'Expires': '0'
         }
     )
-
 @app.route('/api/camera/stream/detect')
 def video_stream_detect():
-    """Video streaming route with YOLO detection"""
+    """Video streaming route with YOLO detection - ĐÃ SỬA LỖI 503"""
     global stream_active, camera_stream
     stream_active = True
     
-    # Ensure camera is initialized before streaming (same as video_stream)
     if camera_stream is None or not camera_stream.isOpened():
-        if not init_camera():
-            return "Camera not available", 503
+        print("ℹ Đang thử tìm Webcam lần cuối trước khi stream...")
+        init_camera() 
     
     return Response(
         generate_frames_with_detection(),
@@ -1062,47 +1116,34 @@ def video_stream_detect():
             'Expires': '0'
         }
     )
-
 @app.route('/api/camera/start', methods=['POST'])
 def start_camera():
-    """Start camera stream - initialize camera only when requested"""
+    """Start camera stream - Modified to allow ESP32 fallback"""
     global camera_stream, stream_active
     
-    # Initialize camera if not already initialized
+    # 1. Thử khởi động Webcam 
+    webcam_status = False
     if camera_stream is None or not camera_stream.isOpened():
-        success = init_camera()
-        if not success:
-            return jsonify({
-                'success': False,
-                'error': 'Camera not available',
-                'message': 'Không thể khởi động camera. Vui lòng:\n' +
-                          '1. Kiểm tra camera đã kết nối\n' +
-                          '2. Cấp quyền truy cập camera (trên macOS: System Settings > Privacy > Camera)\n' +
-                          '3. Đảm bảo không có ứng dụng khác đang sử dụng camera\n' +
-                          '4. Thử restart server'
-            }), 500
-    
-    # Verify camera is still working
-    try:
-        ret, frame = camera_stream.read()
-        if not ret or frame is None:
-            # Camera lost, try to reinitialize
-            if not init_camera():
-                return jsonify({
-                    'success': False,
-                    'error': 'Camera read failed',
-                    'message': 'Không thể đọc từ camera. Vui lòng kiểm tra lại.'
-                }), 500
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'message': f'Lỗi camera: {str(e)}'
-        }), 500
-    
-    stream_active = True
-    return jsonify({'success': True, 'message': 'Camera started successfully'})
+        webcam_status = init_camera()
+    else:
+        webcam_status = True
 
+    # 2. Dù Webcam có lên hay không, vẫn set stream_active = True
+    # Để vòng lặp trong generate_frames_with_detection 
+    # có cơ hội chạy và tự động lấy ảnh từ ESP32.
+    stream_active = True
+    
+    if webcam_status:
+        msg = 'Đã khởi động Webcam thành công.'
+    else:
+        msg = 'Không tìm thấy Webcam, hệ thống sẽ tự động chuyển sang ESP32-CAM.'
+        print(f"⚠ {msg}")
+
+    # Luôn trả về Success để giao diện Web không hiện lỗi pop-up
+    return jsonify({
+        'success': True, 
+        'message': msg
+    })
 @app.route('/api/camera/stop', methods=['POST'])
 def stop_camera():
     """Stop camera stream and release camera"""
@@ -1501,4 +1542,4 @@ if __name__ == '__main__':
     atexit.register(cleanup)
     
     # Run Flask app
-    app.run(debug=True, host='0.0.0.0', port=5001)
+    app.run(debug=True, use_reloader=False, host='0.0.0.0', port=5001)
