@@ -647,11 +647,11 @@
                 <!-- Camera Live Stream Section -->
                 <div style="margin-bottom: 20px;">
                     <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-                        <button onclick="startLiveCamera()" id="startCameraBtn" style="flex: 1;">
-                            📹 Bật Camera Trực Tiếp
+                        <button onclick="startLiveCamera('webcam')" id="startWebcamBtn" style="flex: 1;">
+                            📹 Webcam
                         </button>
-                        <button onclick="startLiveCameraWithDetection()" id="startCameraDetectBtn" style="flex: 1;">
-                            🤖 Camera + AI Detection
+                        <button onclick="startLiveCamera('esp32')" id="startESP32Btn" style="flex: 1;">
+                            📷 ESP32-CAM
                         </button>
                         <button onclick="stopLiveCamera()" id="stopCameraBtn" style="flex: 1; background: #e74c3c; display: none;">
                             ⏹️ Tắt Camera
@@ -1186,106 +1186,60 @@ startSensorStream();
         
         checkAPIConnection();
 
-        // Live Camera Functions
-        function startLiveCamera() {
-            if (liveCameraActive) {
-                stopLiveCamera();
-                return;
+        // Parse API response safely (server may return HTML on 500 error)
+        async function parseJsonResponse(res) {
+            const text = await res.text();
+            if (!res.ok) {
+                try {
+                    const data = JSON.parse(text);
+                    throw new Error(data.message || data.error || `HTTP ${res.status}`);
+                } catch (e) {
+                    if (e instanceof SyntaxError || text.trim().startsWith('<')) {
+                        throw new Error(`Lỗi máy chủ (HTTP ${res.status}). Kiểm tra console server.`);
+                    }
+                    throw e;
+                }
             }
-            
-            console.log('📹 Starting camera...');
-            
-            // Show loading state
-            document.getElementById('liveCameraContainer').style.display = 'block';
-            document.getElementById('cameraLoading').style.display = 'block';
-            document.getElementById('liveCameraFeed').style.display = 'none';
-            document.getElementById('uploadArea').style.display = 'none';
-            document.getElementById('startCameraBtn').style.display = 'none';
-            document.getElementById('startCameraDetectBtn').style.display = 'none';
-            document.getElementById('stopCameraBtn').style.display = 'block';
-            
-            // Start camera on server FIRST
-            fetch('/api/camera/start', { method: 'POST' })
-                .then(res => {
-                    if (!res.ok) {
-                        return res.json().then(data => {
-                            throw new Error(data.message || `HTTP ${res.status}`);
-                        });
-                    }
-                    return res.json();
-                })
-                .then(data => {
-                    if (!data.success) {
-                        throw new Error(data.message || 'Camera not available');
-                    }
-                    
-                    console.log('✓ Camera server started:', data);
-                    
-                    liveCameraActive = true;
-                    liveCameraMode = 'stream';
-                    
-                    // Update status - showing YOLO detection preview
-                    document.getElementById('cameraStatus').innerHTML = '🤖 Đang phát trực tiếp với nhận diện YOLO...';
-                    
-                    // Start camera stream with YOLO detection preview
-                    const feed = document.getElementById('liveCameraFeed');
-                    const streamUrl = '/api/camera/stream/detect?' + new Date().getTime();
-                    console.log('📡 Starting stream with YOLO detection:', streamUrl);
-                    
-                    feed.onload = function() {
-                        console.log('✓ Camera feed loaded');
-                        document.getElementById('cameraLoading').style.display = 'none';
-                        document.getElementById('liveCameraFeed').style.display = 'block';
-                    };
-                    
-                    feed.onerror = function() {
-                        console.error('✗ Camera feed error');
-                        if (liveCameraActive) {
-                            document.getElementById('cameraLoading').innerHTML = 
-                                '<div style="color: #ff6b6b;">❌ Lỗi kết nối camera</div>';
-                        }
-                    };
-                    
-                    feed.src = streamUrl;
-                })
-                .catch(err => {
-                    console.error('Camera start error:', err);
-                    document.getElementById('liveCameraContainer').style.display = 'none';
-                    document.getElementById('uploadArea').style.display = 'block';
-                    document.getElementById('startCameraBtn').style.display = 'block';
-                    document.getElementById('startCameraDetectBtn').style.display = 'block';
-                    document.getElementById('stopCameraBtn').style.display = 'none';
-                    alert('Không thể khởi động camera:\n' + err.message + '\n\nKiểm tra:\n- Camera đã kết nối\n- Đã cấp quyền truy cập camera\n- Không có app khác đang dùng camera');
-                });
+            try {
+                return text ? JSON.parse(text) : {};
+            } catch (e) {
+                throw new Error('Phản hồi không hợp lệ từ máy chủ.');
+            }
         }
 
-        function startLiveCameraWithDetection() {
+        // Live Camera Functions
+        function startLiveCamera(source) {
             if (liveCameraActive) {
                 stopLiveCamera();
                 return;
             }
             
-            console.log('🤖 Starting camera with AI detection...');
+            const sourceName = source === 'webcam' ? 'Webcam' : 'ESP32-CAM';
+            console.log(`📹 Starting ${sourceName}...`);
             
             // Show loading state
             document.getElementById('liveCameraContainer').style.display = 'block';
             document.getElementById('cameraLoading').style.display = 'block';
             document.getElementById('liveCameraFeed').style.display = 'none';
             document.getElementById('uploadArea').style.display = 'none';
-            document.getElementById('startCameraBtn').style.display = 'none';
-            document.getElementById('startCameraDetectBtn').style.display = 'none';
+            document.getElementById('startWebcamBtn').style.display = 'none';
+            document.getElementById('startESP32Btn').style.display = 'none';
             document.getElementById('stopCameraBtn').style.display = 'block';
             
-            // Start camera on server FIRST
-            fetch('/api/camera/start', { method: 'POST' })
-                .then(res => {
-                    if (!res.ok) {
-                        return res.json().then(data => {
-                            throw new Error(data.message || `HTTP ${res.status}`);
-                        });
-                    }
-                    return res.json();
+            // Set camera source FIRST
+            fetch('/api/camera/source', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ source: source })
+            })
+                .then(res => parseJsonResponse(res))
+                .then(sourceData => {
+                    console.log(`✓ Camera source set to: ${source}`);
+                    
+                    // Start camera on server
+                    return fetch('/api/camera/start', { method: 'POST' });
                 })
+                .then(res => parseJsonResponse(res))
                 .then(data => {
                     if (!data.success) {
                         throw new Error(data.message || 'Camera not available');
@@ -1294,27 +1248,32 @@ startSensorStream();
                     console.log('✓ Camera server started:', data);
                     
                     liveCameraActive = true;
-                    liveCameraMode = 'detect';
+                    liveCameraMode = source;
                     
                     // Update status
-                    document.getElementById('cameraStatus').innerHTML = '🤖 Đang phát trực tiếp với AI Detection...';
+                    const statusText = source === 'webcam' 
+                        ? '📹 Đang phát trực tiếp từ Webcam với AI Detection...'
+                        : '📷 Đang phát trực tiếp từ ESP32-CAM với AI Detection...';
+                    document.getElementById('cameraStatus').innerHTML = statusText;
                     
-                    // Start camera stream with detection AFTER server confirms camera is ready
+                    // Start camera stream with detection
                     const feed = document.getElementById('liveCameraFeed');
                     const streamUrl = '/api/camera/stream/detect?' + new Date().getTime();
-                    console.log('📡 Starting stream with detection:', streamUrl);
+                    console.log(`📡 Starting stream from ${source}:`, streamUrl);
                     
                     feed.onload = function() {
-                        console.log('✓ Camera feed with detection loaded');
+                        console.log(`✓ Camera feed loaded from ${source}`);
                         document.getElementById('cameraLoading').style.display = 'none';
                         document.getElementById('liveCameraFeed').style.display = 'block';
                     };
                     
                     feed.onerror = function() {
-                        console.error('✗ Camera feed error');
+                        console.error(`✗ Camera feed error from ${source}`);
                         if (liveCameraActive) {
-                            document.getElementById('cameraLoading').innerHTML = 
-                                '<div style="color: #ff6b6b;">❌ Lỗi kết nối camera</div>';
+                            const errorMsg = source === 'webcam'
+                                ? '<div style="color: #ff6b6b;">❌ Lỗi kết nối Webcam</div>'
+                                : '<div style="color: #ff6b6b;">❌ Lỗi kết nối ESP32-CAM</div>';
+                            document.getElementById('cameraLoading').innerHTML = errorMsg;
                         }
                     };
                     
@@ -1324,10 +1283,14 @@ startSensorStream();
                     console.error('Camera start error:', err);
                     document.getElementById('liveCameraContainer').style.display = 'none';
                     document.getElementById('uploadArea').style.display = 'block';
-                    document.getElementById('startCameraBtn').style.display = 'block';
-                    document.getElementById('startCameraDetectBtn').style.display = 'block';
+                    document.getElementById('startWebcamBtn').style.display = 'block';
+                    document.getElementById('startESP32Btn').style.display = 'block';
                     document.getElementById('stopCameraBtn').style.display = 'none';
-                    alert('Không thể khởi động camera:\n' + err.message + '\n\nKiểm tra:\n- Camera đã kết nối\n- Đã cấp quyền truy cập camera\n- Không có app khác đang dùng camera');
+                    
+                    const errorMsg = source === 'webcam'
+                        ? 'Không thể khởi động Webcam:\n' + err.message + '\n\nKiểm tra:\n- Webcam đã kết nối\n- Đã cấp quyền truy cập camera\n- Không có app khác đang dùng camera'
+                        : 'Không thể khởi động ESP32-CAM:\n' + err.message + '\n\nKiểm tra:\n- ESP32-CAM đã kết nối WiFi\n- IP address đúng (192.168.137.14)\n- ESP32-CAM đang chạy';
+                    alert(errorMsg);
                 });
         }
 
@@ -1338,8 +1301,8 @@ startSensorStream();
             // Hide live feed
             document.getElementById('liveCameraContainer').style.display = 'none';
             document.getElementById('uploadArea').style.display = 'block';
-            document.getElementById('startCameraBtn').style.display = 'block';
-            document.getElementById('startCameraDetectBtn').style.display = 'block';
+            document.getElementById('startWebcamBtn').style.display = 'block';
+            document.getElementById('startESP32Btn').style.display = 'block';
             document.getElementById('stopCameraBtn').style.display = 'none';
             
             // Stop camera stream

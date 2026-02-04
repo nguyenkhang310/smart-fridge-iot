@@ -29,7 +29,7 @@ CLASSIFICATION_MODEL_PATH = 'models/fruit_classification.pt'  # Model để phâ
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs('models', exist_ok=True)
 # ESP32-CAM 
-ESP32_CAM_IP = "http://192.168.137.165"  # IP 
+ESP32_CAM_IP = "http://192.168.137.14"  # IP 
 ESP32_CAPTURE_URL = f"{ESP32_CAM_IP}/capture"
 ESP32_VIEW_URL = f"{ESP32_CAM_IP}/view"
 
@@ -331,6 +331,7 @@ ITEM_NAMES_VI = {
 camera_stream = None
 camera_lock = threading.Lock()
 stream_active = False
+selected_camera_source = "webcam"  # "webcam" or "esp32"
 
 # Firebase real-time update thread
 firebase_update_queue = Queue()
@@ -461,34 +462,34 @@ def generate_frames():
             threading.Event().wait(1.0)
 
 def generate_frames_with_detection():
-    """Generate video frames with detection - HỖ TRỢ CẢ WEBCAM VÀ ESP32"""
-    global camera_stream, stream_active, model, model_detect, model_classify
+    """Generate video frames with detection - CHỌN WEBCAM HOẶC ESP32"""
+    global camera_stream, stream_active, model, model_detect, model_classify, selected_camera_source
     
-    print("Bắt đầu luồng xử lý Detection (Webcam/ESP32)...") # Log báo hiệu bắt đầu
+    print(f"Bắt đầu luồng xử lý Detection với camera: {selected_camera_source}") # Log báo hiệu bắt đầu
     
     while stream_active:
         frame = None
         source_type = "none"
 
-        # 1. Ưu tiên lấy từ Webcam 
-        with camera_lock:
-            if camera_stream is not None and camera_stream.isOpened():
-                success, cam_frame = camera_stream.read()
-                if success:
-                    frame = cam_frame
-                    source_type = "webcam"
-        
-        # 2. Nếu Webcam không có ảnh, lấy từ ESP32
-        if frame is None:
-            # Gọi hàm lấy ảnh ESP32
+        # Chỉ lấy từ camera source được chọn
+        if selected_camera_source == "webcam":
+            # Lấy từ Webcam
+            with camera_lock:
+                if camera_stream is not None and camera_stream.isOpened():
+                    success, cam_frame = camera_stream.read()
+                    if success:
+                        frame = cam_frame
+                        source_type = "webcam"
+        elif selected_camera_source == "esp32":
+            # Lấy từ ESP32
             esp_frame = fetch_image_from_esp32(timeout=2) 
             if esp_frame is not None:
                 frame = esp_frame
                 source_type = "esp32"
         
-        # 3. Nếu cả 2 đều không có ảnh -> Chờ chút rồi thử lại
+        # Nếu không lấy được ảnh -> Chờ chút rồi thử lại
         if frame is None:
-            print("Không lấy được ảnh từ nguồn nào cả. Đang thử lại...")
+            print(f"Không lấy được ảnh từ {selected_camera_source}. Đang thử lại...")
             threading.Event().wait(0.5)
             continue
 
@@ -1119,31 +1120,30 @@ def video_stream_detect():
 @app.route('/api/camera/start', methods=['POST'])
 def start_camera():
     """Start camera stream - Modified to allow ESP32 fallback"""
-    global camera_stream, stream_active
+    global camera_stream, stream_active, selected_camera_source
     
-    # 1. Thử khởi động Webcam 
-    webcam_status = False
-    if camera_stream is None or not camera_stream.isOpened():
-        webcam_status = init_camera()
-    else:
-        webcam_status = True
+    try:
+        # Chỉ thử khởi động Webcam khi chọn webcam
+        webcam_status = False
+        if selected_camera_source == 'webcam':
+            if camera_stream is None or not camera_stream.isOpened():
+                webcam_status = init_camera()
+            else:
+                webcam_status = True
 
-    # 2. Dù Webcam có lên hay không, vẫn set stream_active = True
-    # Để vòng lặp trong generate_frames_with_detection 
-    # có cơ hội chạy và tự động lấy ảnh từ ESP32.
-    stream_active = True
-    
-    if webcam_status:
-        msg = 'Đã khởi động Webcam thành công.'
-    else:
-        msg = 'Không tìm thấy Webcam, hệ thống sẽ tự động chuyển sang ESP32-CAM.'
-        print(f"⚠ {msg}")
+        stream_active = True
+        
+        if selected_camera_source == 'webcam':
+            msg = 'Đã khởi động Webcam thành công.' if webcam_status else 'Webcam chưa sẵn sàng, thử kiểm tra kết nối.'
+        else:
+            msg = 'Đã chọn ESP32-CAM. Đảm bảo ESP32-CAM đang bật và cùng mạng.'
 
-    # Luôn trả về Success để giao diện Web không hiện lỗi pop-up
-    return jsonify({
-        'success': True, 
-        'message': msg
-    })
+        return jsonify({
+            'success': True, 
+            'message': msg
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e), 'message': str(e)}), 500
 @app.route('/api/camera/stop', methods=['POST'])
 def stop_camera():
     """Stop camera stream and release camera"""
@@ -1160,6 +1160,35 @@ def stop_camera():
             camera_stream = None
     
     return jsonify({'success': True, 'message': 'Camera stopped'})
+
+@app.route('/api/camera/source', methods=['GET', 'POST'])
+def camera_source():
+    """Get or set camera source (webcam or esp32)"""
+    global selected_camera_source, camera_stream, stream_active
+    
+    if request.method == 'GET':
+        return jsonify({'source': selected_camera_source})
+    
+    try:
+        data = request.get_json(silent=True) or {}
+        source = data.get('source', 'webcam')
+        
+        if source not in ['webcam', 'esp32']:
+            return jsonify({'success': False, 'error': 'Invalid source. Must be "webcam" or "esp32"'}), 400
+        
+        selected_camera_source = source
+        
+        if source == 'webcam':
+            if camera_stream is None or not camera_stream.isOpened():
+                init_camera()
+        
+        return jsonify({
+            'success': True,
+            'source': selected_camera_source,
+            'message': f'Đã chọn camera: {source}'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e), 'message': str(e)}), 500
 
 @app.route('/api/camera/status', methods=['GET'])
 def camera_status():
