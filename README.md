@@ -1081,7 +1081,7 @@ MIT License - see `LICENSE` file for details
 
 ## Contact & Support
 
-- Email: your-email@example.com
+- Email: nguyenkhang031006@gmail.com.
 - Issues: [GitHub Issues](https://github.com/your-repo/issues)
 - Documentation: See `.md` files in project
 
@@ -1089,7 +1089,7 @@ MIT License - see `LICENSE` file for details
 
 <div align="center">
 
-**Good luck with your project!**
+**Good luck!**
 
 Made by HCM-UTE Team 3
 
