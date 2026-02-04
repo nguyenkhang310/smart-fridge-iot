@@ -29,7 +29,7 @@ CLASSIFICATION_MODEL_PATH = 'models/fruit_classification.pt'  # Model để phâ
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs('models', exist_ok=True)
 # ESP32-CAM 
-ESP32_CAM_IP = "http://192.168.137.14"  # IP 
+ESP32_CAM_IP = "http://192.168.137.14"  # Dán tên IP của ESP32-CAM vào đây
 ESP32_CAPTURE_URL = f"{ESP32_CAM_IP}/capture"
 ESP32_VIEW_URL = f"{ESP32_CAM_IP}/view"
 
