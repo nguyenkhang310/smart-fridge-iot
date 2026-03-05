@@ -200,6 +200,33 @@ def analyze_ripeness_specific(img_crop, fruit_type):
     
     return status_display, days_left
 
+def _ripeness_to_bgr(ripeness_status: str | None, is_rotten: bool = False):
+    """
+    Map trạng thái trái cây -> màu BGR để vẽ bounding box + nền nhãn.
+
+    Quy ước:
+    - HONG: đỏ
+    - CHIN: vàng
+    - QUA CHIN: cam
+    - SONG/UONG: xanh lá
+    - Khác/None: xám
+    """
+    if is_rotten:
+        return (0, 0, 255)  # Red
+    if not ripeness_status:
+        return (200, 200, 200)  # Gray
+
+    s = str(ripeness_status).strip().upper()
+    if s == "HONG":
+        return (0, 0, 255)
+    if s == "CHIN":
+        return (0, 255, 255)  # Yellow
+    if s in {"QUA CHIN", "QUACHIN", "QUA_CHIN"}:
+        return (0, 165, 255)  # Orange
+    if s in {"SONG", "UONG"}:
+        return (0, 255, 0)  # Green
+    return (200, 200, 200)
+
 def preprocess_image(frame):
     """Preprocess image để cải thiện chất lượng detection"""
     lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
@@ -575,12 +602,20 @@ def generate_frames_with_detection():
                                 category = 'fruit'
                         
                         # Vẽ khung 
-                        if is_rotten: color = (0, 0, 255)
-                        elif ripeness_status: color = (0, 255, 0)
-                        else: color = (200, 200, 200)
+                        color = _ripeness_to_bgr(ripeness_status, is_rotten=is_rotten)
                         cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
                         #Vẽ text label
-                        cv2.putText(annotated_frame, class_name, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                        # Nền nhãn cùng màu với khung để nổi bật trên video
+                        label_text = f"{class_name.split(':')[0].strip()} - {ripeness_status}" if ripeness_status else class_name
+                        label_text = f"{label_text} ({confidence*100:.0f}%)" if confidence <= 1 else f"{label_text} ({confidence:.0f}%)"
+                        font_scale = 0.55
+                        thickness = 2
+                        (tw, th), _ = cv2.getTextSize(label_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+                        y_text = y1 - 10
+                        if y_text - th - 6 < 0:
+                            y_text = y2 + th + 10
+                        cv2.rectangle(annotated_frame, (x1, y_text - th - 6), (x1 + tw + 10, y_text + 4), color, -1)
+                        cv2.putText(annotated_frame, label_text, (x1 + 5, y_text), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness)
 
             else:
                 # Fallback basic model
@@ -790,7 +825,8 @@ def detect_objects():
         image_bytes = file.read()
         nparr = np.frombuffer(image_bytes, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
+        if img is None:
+            return jsonify({'error': 'Invalid image upload'}), 400
     else:
         # Ko có ảnh thì lấy từ ESP32-CAM
         print("Fetching image from ESP32-CAM...")
@@ -800,10 +836,7 @@ def detect_objects():
             return jsonify({'error': 'Failed to get image from ESP32-CAM'}), 500
         print("ESP32 image received")
     try:
-        # Read image
-        image_bytes = file.read()
-        nparr = np.frombuffer(image_bytes, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        # img đã được decode ở trên (từ upload hoặc ESP32)
         
         # Preprocess image if using advanced models
         if model_detect is not None:
@@ -953,10 +986,8 @@ def detect_objects():
                 detections.append(detection)
                 
                 # Draw bounding box with color coding
-                if is_rotten:
-                    color = (0, 0, 255)  # Red for rotten fruit
-                elif ripeness_status:
-                    color = (0, 255, 0)  # Green for good fruit
+                if category == 'fruit':
+                    color = _ripeness_to_bgr(ripeness_status, is_rotten=is_rotten)
                 elif category == 'item':
                     color = (255, 165, 0)  # Orange for items/utensils
                 elif category == 'food':
@@ -968,8 +999,9 @@ def detect_objects():
                 
                 # Draw label
                 label = f"{class_name} ({confidence:.0f}%)"
-                if ripeness_status:
-                    label = f"{class_name.split('(')[0]}: {ripeness_status} ({confidence:.0f}%)"
+                if category == 'fruit' and ripeness_status:
+                    base = class_name.split('(')[0].split(':')[0].strip()
+                    label = f"{base} - {ripeness_status} ({confidence:.0f}%)"
                 if days_left:
                     label += f" - Hạn: {days_left}"
                 

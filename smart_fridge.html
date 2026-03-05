@@ -1346,17 +1346,36 @@ function drawBoundingBoxes() {
             // Redraw image first
             ctx.drawImage(currentImage, 0, 0, canvas.width, canvas.height);
             
+            function getRipenessColor(obj) {
+                const ripenessRaw = (obj.ripeness_status || '').toString().trim().toUpperCase();
+                const isRotten = !!obj.is_rotten || ripenessRaw === 'HONG' || /H[ỎO]NG/i.test(obj.class || '');
+                if (isRotten) return '#dc2626'; // red
+                if (ripenessRaw === 'CHIN') return '#facc15'; // yellow
+                if (ripenessRaw === 'QUA CHIN' || ripenessRaw === 'QUACHIN' || ripenessRaw === 'QUA_CHIN') return '#fb923c'; // orange
+                if (ripenessRaw === 'SONG' || ripenessRaw === 'UONG') return '#22c55e'; // green
+
+                // fallback theo category nếu không có ripeness_status
+                if (obj.category === 'food') return '#0ea5e9'; // blue-ish for food
+                if (obj.category === 'item') return '#f59e0b'; // amber for items
+                if (obj.category === 'fruit') return '#22c55e'; // fruit default green
+                return '#6b7280'; // gray
+            }
+
+            function getLabelText(obj) {
+                const confidence = typeof obj.confidence === 'number'
+                    ? (obj.confidence * 100).toFixed(0)
+                    : (parseFloat(obj.confidence || 0) * 100).toFixed(0);
+                const ripenessRaw = (obj.ripeness_status || '').toString().trim();
+                if (ripenessRaw) {
+                    const base = (obj.class || '').split('(')[0].split(':')[0].trim();
+                    return `${base} - ${ripenessRaw.toUpperCase()} (${confidence}%)`;
+                }
+                return `${obj.class || 'Unknown'} ${confidence}%`;
+            }
+
             // Draw boxes
             detectedObjects.forEach((obj, index) => {
-                // Determine color based on category
-                let color;
-                if (obj.category === 'fruit') {
-                    color = '#2ecc71'; // Green for fruits
-                } else if (obj.category === 'food') {
-                    color = '#3498db'; // Blue for food
-                } else {
-                    color = '#e74c3c'; // Red for other
-                }
+                const color = getRipenessColor(obj);
                 
                 const bbox = obj.bbox;
                 
@@ -1366,10 +1385,7 @@ function drawBoundingBoxes() {
                 ctx.strokeRect(bbox.x, bbox.y, bbox.width, bbox.height);
                 
                 // Prepare label
-                const confidence = typeof obj.confidence === 'number' 
-                    ? (obj.confidence * 100).toFixed(0) 
-                    : (parseFloat(obj.confidence) * 100).toFixed(0);
-                const label = `${obj.class} ${confidence}%`;
+                const label = getLabelText(obj);
                 
                 // Measure text width
                 ctx.font = 'bold 14px Arial';
@@ -1380,7 +1396,7 @@ function drawBoundingBoxes() {
                 ctx.fillRect(bbox.x, bbox.y - 25, textWidth + 10, 25);
                 
                 // Draw label text
-                ctx.fillStyle = 'white';
+                ctx.fillStyle = '#111827';
                 ctx.fillText(label, bbox.x + 5, bbox.y - 7);
             });
         }
@@ -1401,6 +1417,32 @@ function drawBoundingBoxes() {
                 return;
             }
 
+            function getRipenessMeta(obj) {
+                const ripenessRaw = (obj.ripeness_status || '-').toString().trim();
+                const ripenessUpper = ripenessRaw === '-' ? '-' : ripenessRaw.toUpperCase();
+                const isRotten = !!obj.is_rotten || ripenessUpper === 'HONG' || /H[ỎO]NG/i.test(obj.class || '');
+                const isRipe = ripenessUpper === 'CHIN' || ripenessUpper === 'QUA CHIN' || ripenessUpper === 'QUACHIN' || ripenessUpper === 'QUA_CHIN';
+                const isUnripe = ripenessUpper === 'SONG' || ripenessUpper === 'UONG';
+
+                let accent = '#e5e7eb';
+                let rowBg = 'white';
+                let textColor = '#374151';
+                if (isRotten) {
+                    accent = '#dc2626';
+                    rowBg = 'rgba(248, 113, 113, 0.14)';
+                    textColor = '#b91c1c';
+                } else if (isRipe) {
+                    accent = ripenessUpper.startsWith('QUA') ? '#fb923c' : '#facc15';
+                    rowBg = ripenessUpper.startsWith('QUA') ? 'rgba(251, 146, 60, 0.14)' : 'rgba(250, 204, 21, 0.18)';
+                    textColor = '#92400e';
+                } else if (isUnripe) {
+                    accent = '#22c55e';
+                    rowBg = 'rgba(34, 197, 94, 0.12)';
+                    textColor = '#065f46';
+                }
+                return { ripenessUpper, isRotten, accent, rowBg, textColor };
+            }
+
             const rows = filtered.map(obj => {
                 const categoryLabel = obj.category === 'fruit'
                     ? 'Trái cây'
@@ -1418,12 +1460,11 @@ function drawBoundingBoxes() {
                         ? (obj.confidence * 100).toFixed(0)
                         : (parseFloat(obj.confidence || 0) * 100).toFixed(0);
 
-                const ripeness = obj.ripeness_status || '-';
+                const meta = getRipenessMeta(obj);
+                const ripeness = meta.ripenessUpper;
                 const daysLeft = obj.days_left || '-';
-
-                const isRotten = obj.is_rotten || (ripeness && ripeness.toUpperCase() === 'HONG');
-                const rowBg = isRotten ? 'rgba(248, 113, 113, 0.12)' : 'white';
-                const borderColor = isRotten ? '#dc2626' : '#e5e7eb';
+                const rowBg = meta.rowBg;
+                const borderColor = meta.accent;
 
                 return `
                     <div style="
@@ -1435,6 +1476,7 @@ function drawBoundingBoxes() {
                         background: ${rowBg};
                         border-radius: 6px;
                         border: 1px solid ${borderColor};
+                        box-shadow: inset 0 0 0 1px rgba(0,0,0,0.02);
                         font-size: 0.9em;
                     ">
                         <div style="font-weight: 500; color: #111827;">${obj.class}</div>
@@ -1452,7 +1494,7 @@ function drawBoundingBoxes() {
                             </span>
                         </div>
                         <div style="color: #374151;">${confidence}%</div>
-                        <div style="color: ${isRotten ? '#b91c1c' : '#065f46'};">${ripeness}</div>
+                        <div style="color: ${meta.textColor}; font-weight: 600;">${ripeness}</div>
                         <div style="color: #374151;">${daysLeft}</div>
                     </div>
                 `;
