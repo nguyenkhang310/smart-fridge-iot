@@ -29,7 +29,7 @@ CLASSIFICATION_MODEL_PATH = 'models/fruit_classification.pt'  # Model để phâ
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs('models', exist_ok=True)
 # ESP32-CAM 
-ESP32_CAM_IP = "http://192.168.137.14"  # Dán tên IP của ESP32-CAM vào đây
+ESP32_CAM_IP = "http://192.168.137.16"  # Dán tên IP của ESP32-CAM vào đây
 ESP32_CAPTURE_URL = f"{ESP32_CAM_IP}/capture"
 ESP32_VIEW_URL = f"{ESP32_CAM_IP}/view"
 
@@ -337,6 +337,14 @@ inventory = {
     'last_detection': None
 }
 
+def reset_inventory():
+    """Đưa số lượng vật phẩm về 0 (dùng khi tắt camera / xóa ảnh)."""
+    inventory['total_items'] = 0
+    inventory['fruits'] = []
+    inventory['foods'] = []
+    inventory['other'] = []
+    inventory['last_detection'] = None
+
 # Fruit and food categories based on COCO dataset
 FRUIT_CLASSES = ['apple', 'banana', 'orange', 'broccoli', 'carrot']
 FOOD_CLASSES = ['sandwich', 'hot dog', 'pizza', 'donut', 'cake']
@@ -490,7 +498,7 @@ def generate_frames():
 
 def generate_frames_with_detection():
     """Generate video frames with detection - CHỌN WEBCAM HOẶC ESP32"""
-    global camera_stream, stream_active, model, model_detect, model_classify, selected_camera_source
+    global camera_stream, stream_active, model, model_detect, model_classify, selected_camera_source, inventory
     
     print(f"Bắt đầu luồng xử lý Detection với camera: {selected_camera_source}") # Log báo hiệu bắt đầu
     
@@ -523,11 +531,16 @@ def generate_frames_with_detection():
         try:
             # Preprocess
             processed_frame = preprocess_image(frame) if model_detect is not None else frame
-                        
+
             use_advanced = model_detect is not None and model_classify is not None
             annotated_frame = frame.copy() # Mặc định là ảnh gốc
 
             if use_advanced:
+                # Biến tạm để lưu thống kê vật phẩm cho frame hiện tại
+                frame_fruits = []
+                frame_foods = []
+                frame_others = []
+
                 # Stage 1: Detection
                 results = model_detect(processed_frame, conf=0.5, verbose=False)
                 annotated_frame = processed_frame.copy()
@@ -588,11 +601,21 @@ def generate_frames_with_detection():
                                         temp_path = os.path.join(UPLOAD_FOLDER, temp_filename)
                                         cv2.imwrite(temp_path, annotated_frame)
                                         
-                                        msg = (f"<b>CẢNH BÁO CÓ HOA QUẢ NGHI HỎNG</b>\n"
-                                               f"Phát hiện: <b>{fruit_base}</b> bị hỏng")
+                                        msg = (
+                                            f"🚨 <b>CẢNH BÁO CHẤT LƯỢNG HOA QUẢ</b>\n\n"
+                                            f"- Hệ thống AI phát hiện: <b>{fruit_base}</b> có dấu hiệu <b>HỎNG</b>.\n"
+                                            f"- Nguồn hình ảnh: <b>{source_type.upper()}</b> (camera tủ lạnh).\n\n"
+                                            f"🔍 <b>Khuyến nghị xử lý</b>:\n"
+                                            f"• Kiểm tra lại quả {fruit_base.lower()} này trực tiếp, loại bỏ nếu có mùi lạ, nấm mốc hoặc mềm nhũn.\n"
+                                            f"• Rà soát thêm các trái xung quanh cùng khay để tránh lây hỏng.\n"
+                                            f"• Đảm bảo nhiệt độ bảo quản trong tủ đang ở mức khuyến nghị."
+                                        )
                                         
                                         threading.Thread(target=send_text, args=(msg,)).start()
-                                        threading.Thread(target=send_photo, args=(temp_path, f"{fruit_base} hỏng!")).start()
+                                        threading.Thread(
+                                            target=send_photo,
+                                            args=(temp_path, f"Hình ảnh cảnh báo: {fruit_base} nghi hỏng"),
+                                        ).start()
                                 else:
                                     ripeness_status, days_left = analyze_ripeness_specific(crop, fruit_base)
                                     class_name = f"{fruit_base}: {ripeness_status}"
@@ -600,6 +623,15 @@ def generate_frames_with_detection():
                              except Exception as e:
                                 print(f"Err classify: {e}")
                                 category = 'fruit'
+
+                        # Thống kê cho inventory realtime
+                        if is_fruit or category == 'fruit':
+                            frame_fruits.append(class_name)
+                        else:
+                            if class_name_lower in FOOD_CLASSES:
+                                frame_foods.append(class_name)
+                            else:
+                                frame_others.append(class_name)
                         
                         # Vẽ khung 
                         color = _ripeness_to_bgr(ripeness_status, is_rotten=is_rotten)
@@ -616,6 +648,17 @@ def generate_frames_with_detection():
                             y_text = y2 + th + 10
                         cv2.rectangle(annotated_frame, (x1, y_text - th - 6), (x1 + tw + 10, y_text + 4), color, -1)
                         cv2.putText(annotated_frame, label_text, (x1 + 5, y_text), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness)
+
+                # Cập nhật inventory toàn cục để frontend có thể đọc số lượng theo thời gian thực
+                try:
+                    total_items = len(frame_fruits) + len(frame_foods) + len(frame_others)
+                    inventory['total_items'] = total_items
+                    inventory['fruits'] = frame_fruits
+                    inventory['foods'] = frame_foods
+                    inventory['other'] = frame_others
+                    inventory['last_detection'] = datetime.now().isoformat()
+                except Exception as e:
+                    print(f"⚠ Error updating realtime inventory: {e}")
 
             else:
                 # Fallback basic model
@@ -896,8 +939,13 @@ def detect_objects():
                 # Gửi thông báo Telegram khi phát hiện vật thể
                 if class_name != "Unknown":
                     alert_key = f"detection_{class_name.lower().replace(' ', '_')}"
-                    if can_send(alert_key, cooldown=15): # Cooldown 15 giây cho mỗi loại vật thể
-                        msg = f"🔎 Phát hiện vật thể: <b>{class_name}</b>"
+                    if can_send(alert_key, cooldown=30):  # Cooldown 30 giây cho mỗi loại vật thể
+                        msg = (
+                            f"🔎 <b>Nhận diện vật thể mới trong tủ lạnh</b>\n\n"
+                            f"- Loại: <b>{class_name}</b>\n"
+                            f"- Độ tin cậy: <b>{confidence*100:.0f}%</b>\n\n"
+                            f"ℹ️ Bạn có thể mở giao diện Web Smart Fridge để xem chi tiết vị trí và trạng thái bảo quản."
+                        )
                         
                         # Gửi trong luồng riêng để không làm chậm response
                         threading.Thread(target=send_text, args=(msg,)).start()
@@ -1043,13 +1091,20 @@ def detect_objects():
 
                 if can_send(alert_key, cooldown=120):
                     msg = (
-                        f"<b>PHÁT HIỆN TRÁI CÂY BỊ HỎNG</b>\n\n"
-                        f"Loại: <b>{fruit}</b>\n"
-                        f"Thời gian: {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}"
+                        f"🚨 <b>BÁO ĐỘNG TRÁI CÂY BỊ HỎNG</b>\n\n"
+                        f"- Loại trái cây: <b>{fruit}</b>\n"
+                        f"- Thời gian ghi nhận: <b>{datetime.now().strftime('%H:%M:%S %d/%m/%Y')}</b>\n\n"
+                        f"🔍 <b>Khuyến nghị xử lý ngay</b>:\n"
+                        f"• Lấy {fruit.lower()} ra khỏi tủ để tránh lây hỏng sang các trái khác.\n"
+                        f"• Kiểm tra thêm toàn bộ khay/kệ đang đặt {fruit.lower()}.\n"
+                        f"• Nếu tần suất phát hiện hỏng tăng cao, xem lại nhiệt độ và độ ẩm bảo quản."
                     )
 
                     send_text(msg)
-                    send_photo(image_path, caption=f"{fruit} bị hỏng ")
+                    send_photo(
+                        image_path,
+                        caption=f"Hình ảnh AI ghi nhận {fruit} bị hỏng trong tủ lạnh.",
+                    )
 
 
         # Save to database if available
@@ -1191,7 +1246,13 @@ def stop_camera():
                 pass
             camera_stream = None
     
-    return jsonify({'success': True, 'message': 'Camera stopped'})
+    # Reset inventory về 0 khi tắt camera để panel thống kê không giữ số cũ
+    try:
+        reset_inventory()
+    except Exception as e:
+        print(f"⚠ Error resetting inventory on camera stop: {e}")
+    
+    return jsonify({'success': True, 'message': 'Camera stopped & inventory cleared'})
 
 @app.route('/api/camera/source', methods=['GET', 'POST'])
 def camera_source():
@@ -1285,6 +1346,29 @@ def get_inventory():
         'other': inventory['other'],
         'last_detection': inventory['last_detection']
     })
+
+@app.route('/api/telegram/test', methods=['GET'])
+def test_telegram_notification():
+    """
+    Endpoint test đơn giản để kiểm tra Telegram bot có nhận được tin nhắn không.
+    Gọi: GET /api/telegram/test và xem:
+    - Trên Telegram: có tin nhắn mới hay không
+    - Trên console server: log lỗi nếu có vấn đề về token/chat_id/mạng
+    """
+    try:
+        send_text("🔔 Test Telegram từ Smart Fridge IoT: kết nối bot thành công.")
+        return jsonify({'success': True, 'message': 'Đã gửi yêu cầu test đến Telegram. Kiểm tra chat bot và console.'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/inventory/reset', methods=['POST'])
+def reset_inventory_endpoint():
+    """Reset inventory về 0 theo yêu cầu từ frontend."""
+    try:
+        reset_inventory()
+        return jsonify({'success': True, 'message': 'Inventory reset to zero'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/stats', methods=['GET'])
 def get_stats():

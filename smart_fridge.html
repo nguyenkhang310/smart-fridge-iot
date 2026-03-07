@@ -1541,6 +1541,32 @@ function drawBoundingBoxes() {
             document.getElementById('oledFruits').textContent = fruitCount;
         }
 
+        // ===== Realtime inventory tổng hợp (camera live + ảnh upload) =====
+        async function fetchLiveInventoryOnce() {
+            try {
+                const res = await fetch('/api/inventory');
+                if (!res.ok) return;
+                const data = await res.json();
+
+                const total = data.total_items ?? 0;
+                const fruits = data.fruit_count ?? 0;
+                const foods = data.food_count ?? 0;
+                const others = data.other_count ?? 0;
+
+                document.getElementById('totalItems').textContent = total;
+                document.getElementById('fruitCount').textContent = fruits;
+                document.getElementById('foodCount').textContent = foods;
+                document.getElementById('otherCount').textContent = others;
+
+                // Cập nhật OLED
+                document.getElementById('oledItems').textContent = total;
+                document.getElementById('oledFruits').textContent = fruits;
+            } catch (e) {
+                // Im lặng, tránh spam lỗi giao diện
+                console.warn('Fetch live inventory failed:', e);
+            }
+        }
+
         // Clear image
         function clearImage() {
             currentImage = null;
@@ -1551,8 +1577,11 @@ function drawBoundingBoxes() {
             document.getElementById('fileInput').value = '';
             document.getElementById('analyzeBtn').disabled = true;
             
-            // Reset stats
+            // Reset stats trên UI
             updateInventoryStats();
+
+            // Yêu cầu backend đưa inventory về 0 để polling /api/inventory trả về 0
+            fetch('/api/inventory/reset', { method: 'POST' }).catch(() => {});
         }
 
 // Initialize
@@ -1561,6 +1590,9 @@ startSensorStream();
         setInterval(updateOLEDTime, 1000);
         updateSensorData(); // Initial load
         updateOLEDTime();
+        // Bật polling inventory 1 cách định kỳ để panel thống kê luôn bám theo kết quả mới nhất
+        fetchLiveInventoryOnce();
+        setInterval(fetchLiveInventoryOnce, 800);
         
         function setSystemStatus(idPrefix, state, textIfAny) {
             const dot = document.getElementById(idPrefix + 'Dot');
