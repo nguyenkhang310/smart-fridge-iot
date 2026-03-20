@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Đăng nhập - Tủ Lạnh Thông Minh IoT</title>
+    <style>
+        *, *::before, *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --blue-primary: #2563eb;
+            --blue-vivid: #3b82f6;
+            --blue-deep: #1d4ed8;
+            --blue-darker: #1e3a8a;
+            --white: #ffffff;
+            --glass-bg: rgba(255, 255, 255, 0.08);
+            --glass-border: rgba(255, 255, 255, 0.18);
+            --glass-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
+            --input-bg: rgba(255, 255, 255, 0.10);
+            --input-border: rgba(255, 255, 255, 0.22);
+            --input-focus: rgba(59, 130, 246, 0.6);
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255, 255, 255, 0.70);
+            --text-muted: rgba(255, 255, 255, 0.45);
+            --error: #f87171;
+            --error-bg: rgba(248, 113, 113, 0.14);
+            --success: #4ade80;
+        }
+
+        html, body {
+            height: 100%;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            min-height: 100vh;
+            background:
+                linear-gradient(135deg,
+                    rgba(15, 23, 42, 0.85) 0%,
+                    rgba(30, 58, 138, 0.75) 50%,
+                    rgba(15, 23, 42, 0.90) 100%),
+                url('/static/img/hinh_background.jpg') center center / cover no-repeat fixed;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* === ANIMATED BACKGROUND PARTICLES === */
+        .bg-layer {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            overflow: hidden;
+        }
+
+        .bg-orb {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(80px);
+            opacity: 0.35;
+            animation: floatOrb 12s ease-in-out infinite;
+        }
+
+        .bg-orb-1 {
+            width: 500px; height: 500px;
+            background: #3b82f6;
+            top: -150px; left: -100px;
+            animation-delay: 0s;
+        }
+        .bg-orb-2 {
+            width: 400px; height: 400px;
+            background: #6366f1;
+            bottom: -100px; right: -80px;
+            animation-delay: -4s;
+        }
+        .bg-orb-3 {
+            width: 300px; height: 300px;
+            background: #0ea5e9;
+            top: 40%; left: 60%;
+            animation-delay: -8s;
+            opacity: 0.2;
+        }
+
+        @keyframes floatOrb {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            33%       { transform: translate(30px, -40px) scale(1.06); }
+            66%       { transform: translate(-20px, 20px) scale(0.95); }
+        }
+
+        /* Subtle grid overlay */
+        .bg-grid {
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+            background-size: 48px 48px;
+            pointer-events: none;
+        }
+
+        /* Floating particles */
+        .particle {
+            position: absolute;
+            width: 4px; height: 4px;
+            background: rgba(255,255,255,0.25);
+            border-radius: 50%;
+            animation: particleRise linear infinite;
+        }
+
+        @keyframes particleRise {
+            0%   { transform: translateY(0) translateX(0); opacity: 0; }
+            10%  { opacity: 1; }
+            90%  { opacity: 0.6; }
+            100% { transform: translateY(-100vh) translateX(var(--dx, 30px)); opacity: 0; }
+        }
+
+        /* === CARD === */
+        .login-wrapper {
+            position: relative;
+            z-index: 10;
+            width: 100%;
+            max-width: 440px;
+            padding: 20px;
+        }
+
+        .login-card {
+            background: rgba(15, 23, 42, 0.55);
+            backdrop-filter: blur(28px) saturate(160%);
+            -webkit-backdrop-filter: blur(28px) saturate(160%);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            box-shadow: var(--glass-shadow), inset 0 1px 0 rgba(255,255,255,0.12);
+            overflow: hidden;
+        }
+
+        /* === HEADER === */
+        .card-header {
+            padding: 36px 36px 28px;
+            text-align: center;
+            position: relative;
+        }
+
+        .card-header::after {
+            content: '';
+            display: block;
+            position: absolute;
+            bottom: 0;
+            left: 36px;
+            right: 36px;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--glass-border), transparent);
+        }
+
+        .logo-wrap {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+
+        .logo-ring {
+            width: 72px; height: 72px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.10);
+            border: 2px solid rgba(255,255,255,0.22);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 0 8px rgba(37,99,235,0.15), 0 8px 24px rgba(0,0,0,0.3);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .logo-ring::before {
+            content: '';
+            position: absolute;
+            inset: -2px;
+            border-radius: 50%;
+            background: conic-gradient(from 0deg, var(--blue-vivid), var(--blue-deep), var(--blue-vivid));
+            animation: spinGlow 4s linear infinite;
+            z-index: -1;
+        }
+
+        @keyframes spinGlow {
+            to { transform: rotate(360deg); }
+        }
+
+        .logo-ring-inner {
+            width: 66px; height: 66px;
+            border-radius: 50%;
+            background: #ffffff; /* Đổi sang nền trắng cho nổi bật logo */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .logo-ring img {
+            width: 46px;
+            height: 46px;
+            object-fit: contain;
+            border-radius: 50%;
+        }
+
+        .logo-ring-fallback {
+            display: none;
+        }
+
+        .card-title {
+            font-size: 1.55em;
+            font-weight: 800;
+            color: var(--text-primary);
+            letter-spacing: -0.02em;
+            margin-bottom: 4px;
+            line-height: 1.2;
+        }
+
+        .card-subtitle {
+            font-size: 0.82em;
+            color: var(--text-secondary);
+            font-weight: 400;
+            letter-spacing: 0.01em;
+        }
+
+        /* === TABS === */
+        .tabs {
+            display: flex;
+            margin: 0 36px 0;
+            padding: 4px;
+            background: rgba(0,0,0,0.25);
+            border-radius: 10px;
+            gap: 4px;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 9px;
+            background: transparent;
+            border: none;
+            border-radius: 8px;
+            color: var(--text-muted);
+            font-size: 0.85em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.22s ease;
+            font-family: inherit;
+            width: auto !important;
+            margin-top: 0 !important;
+        }
+
+        .tab-btn.active {
+            background: linear-gradient(135deg, var(--blue-primary), var(--blue-vivid));
+            color: var(--text-primary);
+            box-shadow: 0 2px 12px rgba(37,99,235,0.45);
+        }
+
+        .tab-btn:not(.active):hover {
+            color: rgba(255,255,255,0.8);
+            background: rgba(255,255,255,0.06);
+            transform: none !important;
+            box-shadow: none !important;
+        }
+
+        /* === FORMS === */
+        .card-body {
+            padding: 24px 36px 36px;
+        }
+
+        .form-panel {
+            display: none;
+            animation: fadeSlideIn 0.28s ease;
+        }
+
+        .form-panel.active {
+            display: block;
+        }
+
+        @keyframes fadeSlideIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        .form-row {
+            margin-bottom: 16px;
+        }
+
+        label {
+            display: block;
+            font-size: 0.78em;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 7px;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .input-wrap {
+            position: relative;
+        }
+
+        .input-icon {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            pointer-events: none;
+            transition: color 0.2s;
+            display: flex;
+        }
+
+        input[type="text"],
+        input[type="password"],
+        input[type="email"] {
+            width: 100%;
+            padding: 12px 14px 12px 40px;
+            background: var(--input-bg);
+            border: 1px solid var(--input-border);
+            border-radius: 10px;
+            color: var(--text-primary);
+            font-size: 0.92em;
+            font-family: inherit;
+            transition: border-color 0.22s, background 0.22s, box-shadow 0.22s;
+            outline: none;
+            caret-color: var(--blue-vivid);
+        }
+
+        input::placeholder { color: var(--text-muted); }
+
+        input:focus {
+            border-color: var(--blue-vivid);
+            background: rgba(255,255,255,0.13);
+            box-shadow: 0 0 0 3px rgba(59,130,246,0.22);
+        }
+
+        input:focus + .input-icon-label,
+        .input-wrap:focus-within .input-icon {
+            color: var(--blue-vivid);
+        }
+
+        /* Password toggle */
+        .toggle-pw {
+            position: absolute;
+            right: 13px;
+            top: 50%;
+            transform: translateY(-50%);
+            cursor: pointer;
+            color: var(--text-muted);
+            background: none;
+            border: none;
+            padding: 3px;
+            display: flex;
+            transition: color 0.2s;
+            font-family: inherit;
+            width: auto !important;
+            margin-top: 0 !important;
+        }
+        .toggle-pw:hover { color: var(--blue-vivid) !important; transform: translateY(-50%) !important; box-shadow: none !important; background: none !important; }
+
+        /* Alert / error */
+        .alert-msg {
+            padding: 11px 14px;
+            border-radius: 9px;
+            font-size: 0.82em;
+            font-weight: 500;
+            margin-bottom: 16px;
+            display: none;
+            align-items: center;
+            gap: 8px;
+            animation: fadeSlideIn 0.2s ease;
+        }
+
+        .alert-msg.error {
+            display: flex;
+            background: var(--error-bg);
+            border: 1px solid rgba(248,113,113,0.28);
+            color: var(--error);
+        }
+
+        .alert-msg.success {
+            display: flex;
+            background: rgba(74,222,128,0.1);
+            border: 1px solid rgba(74,222,128,0.28);
+            color: var(--success);
+        }
+
+        /* Submit button */
+        .btn-submit {
+            width: 100%;
+            padding: 13px;
+            background: linear-gradient(135deg, var(--blue-primary) 0%, var(--blue-vivid) 100%);
+            color: #ffffff;
+            border: none;
+            border-radius: 11px;
+            font-size: 0.95em;
+            font-weight: 700;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.22s;
+            letter-spacing: 0.01em;
+            margin-top: 4px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-submit::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(255,255,255,0.12) 0%, transparent 60%);
+            pointer-events: none;
+        }
+
+        .btn-submit:hover {
+            transform: translateY(-2px) !important;
+            box-shadow: 0 8px 24px rgba(37,99,235,0.5) !important;
+            background: linear-gradient(135deg, var(--blue-deep) 0%, var(--blue-primary) 100%);
+        }
+
+        .btn-submit:active {
+            transform: scale(0.98) !important;
+        }
+
+        .btn-submit:disabled {
+            opacity: 0.65;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .btn-inner {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        /* Spinner */
+        .spinner {
+            width: 17px; height: 17px;
+            border: 2.5px solid rgba(255,255,255,0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            display: none;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Footer */
+        .card-footer {
+            padding: 16px 36px;
+            border-top: 1px solid rgba(255,255,255,0.07);
+            text-align: center;
+            font-size: 0.76em;
+            color: var(--text-muted);
+            letter-spacing: 0.01em;
+        }
+
+        /* Responsive */
+        @media (max-width: 480px) {
+            .login-wrapper { padding: 12px; }
+            .card-header { padding: 28px 24px 22px; }
+            .card-body { padding: 20px 24px 28px; }
+            .tabs { margin: 0 24px 0; }
+            .card-footer { padding: 14px 24px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Background -->
+    <div class="bg-layer">
+        <div class="bg-orb bg-orb-1"></div>
+        <div class="bg-orb bg-orb-2"></div>
+        <div class="bg-orb bg-orb-3"></div>
+    </div>
+    <div class="bg-grid"></div>
+
+    <!-- Floating particles (injected by JS) -->
+    <div class="bg-layer" id="particleLayer"></div>
+
+    <!-- CARD -->
+    <div class="login-wrapper">
+        <div class="login-card">
+
+            <!-- Header -->
+            <div class="card-header">
+                <div class="logo-wrap">
+                    <div class="logo-ring">
+                        <div class="logo-ring-inner">
+                            <img src="/static/img/logo-hcm-ute.png" alt="Logo" id="headerLogo"
+                                onerror="this.style.display='none'; document.getElementById('headerLogoFallback').style.display='flex';" />
+                            <svg id="headerLogoFallback" style="display:none;" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="4" width="18" height="18" rx="3"/><rect x="7" y="4" width="10" height="4" rx="1" fill="rgba(255,255,255,0.2)"/>
+                                <path d="M8 12h8M8 16h5"/>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-title">Tủ Lạnh Thông Minh IoT</div>
+                <div class="card-subtitle">Hệ thống giám sát &amp; điều khiển tích hợp AI</div>
+            </div>
+
+            <!-- Tabs -->
+            <div class="tabs" style="margin-top: 24px;">
+                <button class="tab-btn active" id="tabLogin" onclick="switchTab('login')">Đăng nhập</button>
+                <button class="tab-btn" id="tabRegister" onclick="switchTab('register')">Đăng ký</button>
+            </div>
+
+            <!-- Body -->
+            <div class="card-body">
+
+                <!-- LOGIN FORM -->
+                <div class="form-panel active" id="panelLogin">
+                    <div class="alert-msg" id="loginAlert">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                        <span id="loginAlertText"></span>
+                    </div>
+
+                    <form id="loginForm" onsubmit="handleLogin(event)" autocomplete="on" novalidate>
+                        <div class="form-row">
+                            <label for="loginUsername">Tên đăng nhập</label>
+                            <div class="input-wrap">
+                                <span class="input-icon">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                                </span>
+                                <input type="text" id="loginUsername" name="username" placeholder="Nhập tên đăng nhập" autocomplete="username" required />
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <label for="loginPassword">Mật khẩu</label>
+                            <div class="input-wrap">
+                                <span class="input-icon">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                                </span>
+                                <input type="password" id="loginPassword" name="password" placeholder="Nhập mật khẩu" autocomplete="current-password" required />
+                                <button type="button" class="toggle-pw" onclick="togglePw('loginPassword', this)" tabindex="-1" aria-label="Hiện/Ẩn mật khẩu">
+                                    <svg id="eyeIconLogin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn-submit" id="btnLogin">
+                            <div class="btn-inner">
+                                <div class="spinner" id="loginSpinner"></div>
+                                <span id="loginBtnText">Đăng nhập</span>
+                            </div>
+                        </button>
+                    </form>
+                </div>
+
+                <!-- REGISTER FORM -->
+                <div class="form-panel" id="panelRegister">
+                    <div class="alert-msg" id="registerAlert">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                        <span id="registerAlertText"></span>
+                    </div>
+
+                    <form id="registerForm" onsubmit="handleRegister(event)" autocomplete="off" novalidate>
+                        <div class="form-row">
+                            <label for="regFullName">Họ và tên</label>
+                            <div class="input-wrap">
+                                <span class="input-icon">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                                </span>
+                                <input type="text" id="regFullName" placeholder="Nguyễn Văn A" />
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <label for="regUsername">Tên đăng nhập</label>
+                            <div class="input-wrap">
+                                <span class="input-icon">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="16.92" x2="16.92" y2="22"/><circle cx="10" cy="10" r="7"/></svg>
+                                </span>
+                                <input type="text" id="regUsername" placeholder="Chỉ chữ thường, số và dấu _" autocomplete="new-username" required />
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <label for="regPassword">Mật khẩu</label>
+                            <div class="input-wrap">
+                                <span class="input-icon">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                                </span>
+                                <input type="password" id="regPassword" placeholder="Ít nhất 6 ký tự" autocomplete="new-password" required />
+                                <button type="button" class="toggle-pw" onclick="togglePw('regPassword', this)" tabindex="-1">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn-submit" id="btnRegister">
+                            <div class="btn-inner">
+                                <div class="spinner" id="registerSpinner"></div>
+                                <span id="registerBtnText">Tạo tài khoản</span>
+                            </div>
+                        </button>
+                    </form>
+                </div>
+
+            </div>
+
+            <div class="card-footer">
+                Hệ thống Tủ Lạnh Thông Minh IoT &mdash; HCM-UTE &copy; 2026
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ===== PARTICLE ANIMATION =====
+        (function() {
+            const layer = document.getElementById('particleLayer');
+            const count = 22;
+            for (let i = 0; i < count; i++) {
+                const el = document.createElement('div');
+                el.className = 'particle';
+                const size = Math.random() * 3 + 2;
+                const left = Math.random() * 100;
+                const delay = Math.random() * 16;
+                const dur = Math.random() * 12 + 10;
+                const dx = (Math.random() - 0.5) * 80;
+                el.style.cssText = `
+                    width:${size}px; height:${size}px;
+                    left:${left}vw; bottom:-10px;
+                    animation-duration:${dur}s;
+                    animation-delay:-${delay}s;
+                    --dx:${dx}px;
+                    opacity: ${Math.random() * 0.4 + 0.1};
+                `;
+                layer.appendChild(el);
+            }
+        })();
+
+        // ===== TAB SWITCH =====
+        function switchTab(tab) {
+            document.getElementById('tabLogin').classList.toggle('active', tab === 'login');
+            document.getElementById('tabRegister').classList.toggle('active', tab === 'register');
+            document.getElementById('panelLogin').classList.toggle('active', tab === 'login');
+            document.getElementById('panelRegister').classList.toggle('active', tab === 'register');
+            clearAlerts();
+        }
+
+        function clearAlerts() {
+            document.getElementById('loginAlert').className = 'alert-msg';
+            document.getElementById('registerAlert').className = 'alert-msg';
+        }
+
+        // ===== SHOW ALERT =====
+        function showAlert(id, textId, message, type) {
+            const el = document.getElementById(id);
+            const textEl = document.getElementById(textId);
+            textEl.textContent = message;
+            el.className = 'alert-msg ' + type;
+        }
+
+        // ===== TOGGLE PASSWORD =====
+        function togglePw(inputId, btn) {
+            const inp = document.getElementById(inputId);
+            const isText = inp.type === 'text';
+            inp.type = isText ? 'password' : 'text';
+            btn.innerHTML = isText
+                ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`
+                : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
+        }
+
+        // ===== LOADING STATE =====
+        function setLoading(btnId, spinnerId, textId, loading, text) {
+            const btn = document.getElementById(btnId);
+            const spinner = document.getElementById(spinnerId);
+            const textEl = document.getElementById(textId);
+            btn.disabled = loading;
+            spinner.style.display = loading ? 'block' : 'none';
+            textEl.textContent = text;
+        }
+
+        // ===== LOGIN =====
+        async function handleLogin(e) {
+            e.preventDefault();
+            const username = document.getElementById('loginUsername').value.trim();
+            const password = document.getElementById('loginPassword').value;
+
+            if (!username || !password) {
+                showAlert('loginAlert', 'loginAlertText', 'Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu.', 'error');
+                return;
+            }
+
+            setLoading('btnLogin', 'loginSpinner', 'loginBtnText', true, 'Đang xác thực...');
+            document.getElementById('loginAlert').className = 'alert-msg';
+
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    setLoading('btnLogin', 'loginSpinner', 'loginBtnText', true, 'Đang chuyển trang...');
+                    window.location.href = '/';
+                } else {
+                    showAlert('loginAlert', 'loginAlertText', data.error || 'Sai tên đăng nhập hoặc mật khẩu.', 'error');
+                    setLoading('btnLogin', 'loginSpinner', 'loginBtnText', false, 'Đăng nhập');
+                    // Shake animation
+                    const card = document.querySelector('.login-card');
+                    card.style.animation = 'none';
+                    card.style.transform = 'translateX(0)';
+                    setTimeout(() => {
+                        card.style.transition = 'transform 0.08s';
+                        card.style.transform = 'translateX(-6px)';
+                        setTimeout(() => {
+                            card.style.transform = 'translateX(6px)';
+                            setTimeout(() => {
+                                card.style.transform = 'translateX(-4px)';
+                                setTimeout(() => { card.style.transform = 'translateX(0)'; card.style.transition = ''; }, 80);
+                            }, 80);
+                        }, 80);
+                    }, 0);
+                }
+            } catch (err) {
+                showAlert('loginAlert', 'loginAlertText', 'Lỗi kết nối. Vui lòng thử lại.', 'error');
+                setLoading('btnLogin', 'loginSpinner', 'loginBtnText', false, 'Đăng nhập');
+            }
+        }
+
+        // ===== REGISTER =====
+        async function handleRegister(e) {
+            e.preventDefault();
+            const username = document.getElementById('regUsername').value.trim();
+            const password = document.getElementById('regPassword').value;
+            const full_name = document.getElementById('regFullName').value.trim();
+
+            if (!username || !password) {
+                showAlert('registerAlert', 'registerAlertText', 'Vui lòng nhập tên đăng nhập và mật khẩu.', 'error');
+                return;
+            }
+            if (password.length < 6) {
+                showAlert('registerAlert', 'registerAlertText', 'Mật khẩu phải có ít nhất 6 ký tự.', 'error');
+                return;
+            }
+
+            setLoading('btnRegister', 'registerSpinner', 'registerBtnText', true, 'Đang tạo...');
+            document.getElementById('registerAlert').className = 'alert-msg';
+
+            try {
+                const res = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ username, password, full_name })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showAlert('registerAlert', 'registerAlertText', 'Tạo tài khoản thành công! Hãy đăng nhập.', 'success');
+                    setLoading('btnRegister', 'registerSpinner', 'registerBtnText', false, 'Tạo tài khoản');
+                    setTimeout(() => switchTab('login'), 1800);
+                } else {
+                    showAlert('registerAlert', 'registerAlertText', data.error || 'Không thể tạo tài khoản.', 'error');
+                    setLoading('btnRegister', 'registerSpinner', 'registerBtnText', false, 'Tạo tài khoản');
+                }
+            } catch (err) {
+                showAlert('registerAlert', 'registerAlertText', 'Lỗi kết nối. Vui lòng thử lại.', 'error');
+                setLoading('btnRegister', 'registerSpinner', 'registerBtnText', false, 'Tạo tài khoản');
+            }
+        }
+
+        // Focus username on load
+        window.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => document.getElementById('loginUsername').focus(), 200);
+        });
+    </script>
+</body>
+</html>

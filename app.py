@@ -1,9 +1,9 @@
-from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context
+from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context, session, redirect, url_for, render_template
 from flask_cors import CORS
 import sys
 import cv2
 import numpy as np
-from telegram_notify import send_text, send_photo, can_send
+from core.telegram_notify import send_text, send_photo, can_send
 import requests
 
 # Giảm log OpenCV (tránh MSMF/obsensor spam trên Windows)
@@ -20,7 +20,8 @@ import threading
 from queue import Queue
 
 app = Flask(__name__)
-CORS(app)
+app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24)) # Đổi sang urandom để mỗi lần chạy lại server là phải đăng nhập lại
+CORS(app, supports_credentials=True)
 # Configuration
 UPLOAD_FOLDER = 'uploads'
 MODEL_PATH = 'yolov8n.pt'  # Fallback model
@@ -28,6 +29,134 @@ DETECTION_MODEL_PATH = 'models/fruit_detection.pt'  # Model để detect trái c
 CLASSIFICATION_MODEL_PATH = 'models/fruit_classification.pt'  # Model để phân loại chín/hỏng
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs('models', exist_ok=True)
+
+# Control mode (software=Wokwi/Firebase, hardware=real device)
+CONTROL_MODE_FILE = os.path.join(os.path.dirname(__file__), 'data', 'control_mode.json')
+_control_mode_lock = threading.Lock()
+_control_mode = 'software'  # default: keep existing behavior
+
+def _load_control_mode():
+    global _control_mode
+    try:
+        if os.path.exists(CONTROL_MODE_FILE):
+            with open(CONTROL_MODE_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f) or {}
+                mode = (data.get('mode') or '').strip().lower()
+                if mode in ('software', 'hardware'):
+                    _control_mode = mode
+    except Exception as e:
+        print(f"⚠ Could not load control mode: {e}")
+
+def _save_control_mode(mode: str):
+    try:
+        with open(CONTROL_MODE_FILE, 'w', encoding='utf-8') as f:
+            json.dump({'mode': mode, 'updated_at': datetime.now().isoformat()}, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"⚠ Could not save control mode: {e}")
+
+def get_control_mode() -> str:
+    with _control_mode_lock:
+        return _control_mode
+
+def set_control_mode(mode: str) -> str:
+    global _control_mode
+    mode = (mode or '').strip().lower()
+    if mode not in ('software', 'hardware'):
+        raise ValueError("mode must be 'software' or 'hardware'")
+    with _control_mode_lock:
+        _control_mode = mode
+    _save_control_mode(mode)
+    return mode
+
+_load_control_mode()
+
+# ===== AI Chatbot (local, không dùng Gemini) =====
+_chat_sessions = {}
+_chat_lock = threading.Lock()
+
+def _get_session_history(session_id: str):
+    with _chat_lock:
+        return list(_chat_sessions.get(session_id, []))
+
+def _append_session_history(session_id: str, role: str, content: str):
+    with _chat_lock:
+        hist = _chat_sessions.setdefault(session_id, [])
+        hist.append({'role': role, 'content': content, 'ts': datetime.now().isoformat()})
+        if len(hist) > 30:
+            del hist[:-30]
+
+def _tool_get_inventory():
+    return {
+        'total_items': inventory.get('total_items', 0),
+        'fruits': inventory.get('fruits', []),
+        'foods': inventory.get('foods', []),
+        'other': inventory.get('other', []),
+        'last_detection': inventory.get('last_detection'),
+    }
+
+def _tool_get_sensors():
+    snap = dict(sensor_data)
+    snap['mode'] = get_control_mode()
+    snap['firebase_available'] = bool(FIREBASE_AVAILABLE)
+    snap['hardware_available'] = bool(HARDWARE_AVAILABLE)
+    return snap
+
+def _tool_set_temperature(target_temp: float):
+    target_temp = float(target_temp)
+    previous_temp = sensor_data.get('target_temperature')
+    sensor_data['target_temperature'] = target_temp
+    sensor_data['last_update'] = datetime.now().isoformat()
+
+    mode = get_control_mode()
+    current_temp = sensor_data.get('temperature', target_temp)
+    pwm_sent = None
+    firebase_error = None
+
+    if mode == 'software' and FIREBASE_AVAILABLE:
+        try:
+            fb_data = get_latest_sensor_data()
+            if fb_data and fb_data.get('temperature') is not None:
+                current_temp = float(fb_data.get('temperature', current_temp))
+                sensor_data['temperature'] = current_temp
+        except Exception as e:
+            firebase_error = str(e)
+
+        try:
+            diff = float(current_temp) - target_temp
+            if diff <= 0:
+                pwm = 0
+            else:
+                pwm = min(255, int(80 + diff * 35))
+            if set_peltier_control(pwm):
+                pwm_sent = pwm
+                try:
+                    set_firebase_target_temp(target_temp)
+                except Exception:
+                    pass
+            else:
+                firebase_error = firebase_error or "set_peltier_control returned False"
+        except Exception as e:
+            firebase_error = str(e)
+
+    hardware_stub = False
+    if mode == 'hardware':
+        if HARDWARE_AVAILABLE:
+            control_status = set_temperature_control(target_temp, float(current_temp))
+            sensor_data['status'] = control_status
+        else:
+            hardware_stub = True
+
+    return {
+        'success': True,
+        'mode': mode,
+        'target_temperature': target_temp,
+        'previous_temperature': previous_temp,
+        'current_temp': current_temp,
+        'pwm_sent': pwm_sent,
+        'firebase_error': firebase_error,
+        'hardware_stub': hardware_stub,
+    }
+
 # ESP32-CAM 
 ESP32_CAM_IP = "http://192.168.137.16"  # Dán tên IP của ESP32-CAM vào đây
 ESP32_CAPTURE_URL = f"{ESP32_CAM_IP}/capture"
@@ -269,7 +398,7 @@ def fetch_image_from_esp32(timeout=5):
 
 # Import hardware integration (optional)
 try:
-    from hardware_integration import (
+    from core.hardware_integration import (
         init_hardware, read_sensors, set_temperature_control,
         update_display, update_status_leds, cleanup_hardware
     )
@@ -284,10 +413,12 @@ if HARDWARE_AVAILABLE:
 
 # Import database integration (optional)
 try:
-    from database import (
+    from core.database import (
         init_database, save_sensor_reading, get_latest_sensor_reading,
         save_inventory, get_latest_inventory, save_detection_session,
-        save_detection, save_temperature_setting, get_statistics
+        save_detection, save_temperature_setting, get_statistics,
+        create_user, get_user_by_username, get_user_by_id,
+        update_last_login, count_users, verify_password
     )
     DB_AVAILABLE = True
 except ImportError as e:
@@ -298,13 +429,27 @@ except ImportError as e:
 if DB_AVAILABLE:
     if init_database():
         print("✓ MySQL database initialized")
+        # Create default accounts if no users exist
+        try:
+            if count_users() == 0:
+                create_user('admin', 'admin123', full_name='Administrator', role='admin')
+                create_user('user', 'user123', full_name='Người dùng', role='user')
+                print("✓ Default admin user created (admin / admin123)")
+                print("✓ Default user account created (user / user123)")
+            else:
+                # Ensure default user account exists
+                if not get_user_by_username('user'):
+                    create_user('user', 'user123', full_name='Người dùng', role='user')
+                    print("✓ Default user account created (user / user123)")
+        except Exception as _e:
+            print(f"⚠ Could not create default accounts: {_e}")
     else:
         print("⚠ Database initialization failed - continuing without database")
         DB_AVAILABLE = False
 
 # Import Firebase integration (optional)
 try:
-    from firebase_integration import (
+    from core.firebase_integration import (
         init_firebase, get_latest_sensor_data, get_sensor_history as get_firebase_history,
         set_light_control, set_peltier_control, set_target_temperature as set_firebase_target_temp,
         get_control_status as get_firebase_control_status
@@ -344,6 +489,13 @@ def reset_inventory():
     inventory['foods'] = []
     inventory['other'] = []
     inventory['last_detection'] = None
+
+# Latest detection details for chatbot/UX
+latest_detection = {
+    'updated_at': None,
+    'image_filename': None,
+    'detections': []
+}
 
 # Fruit and food categories based on COCO dataset
 FRUIT_CLASSES = ['apple', 'banana', 'orange', 'broccoli', 'carrot']
@@ -686,15 +838,257 @@ def generate_frames_with_detection():
 # Don't initialize camera on startup - only when user requests it
 # init_camera()  # Commented out - camera will be initialized on demand
 
+def login_required(f):
+    """Decorator: redirect to /login if not authenticated."""
+    from functools import wraps
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get('user_id'):
+            return redirect('/login')
+        return f(*args, **kwargs)
+    return decorated
+
+
+@app.route('/login')
+def serve_login():
+    """Serve the login page. Redirect to dashboard if already logged in."""
+    if session.get('user_id'):
+        return redirect('/')
+    return render_template('login.html')
+
+
 @app.route('/')
+@login_required
 def index():
     """Serve the main HTML page"""
-    return send_from_directory('.', 'smart_fridge.html')
+    return render_template('smart_fridge.html')
 
-@app.route('/logo-hcm-ute.png')
-def serve_logo():
-    """Serve the university logo"""
-    return send_from_directory('.', 'logo-hcm-ute.png')
+# (Đã xoá các route phục vụ file tĩnh vì ảnh đã chuyển sang /static/img)
+
+
+# ===== AUTH API =====
+
+@app.route('/api/auth/login', methods=['POST'])
+def api_auth_login():
+    """Login with username and password."""
+    try:
+        data = request.json or {}
+        username = (data.get('username') or '').strip()
+        password = data.get('password') or ''
+
+        if not username or not password:
+            return jsonify({'success': False, 'error': 'Vui long nhap ten dang nhap va mat khau'}), 400
+
+        if not DB_AVAILABLE:
+            # Fallback demo mode when database is unavailable
+            if username == 'admin' and password == 'admin123':
+                session['user_id'] = 0
+                session['username'] = 'admin'
+                session['full_name'] = 'Administrator'
+                session['role'] = 'admin'
+                return jsonify({'success': True, 'user': {'username': 'admin', 'full_name': 'Administrator', 'role': 'admin'}})
+            return jsonify({'success': False, 'error': 'Sai ten dang nhap hoac mat khau'}), 401
+
+        user = get_user_by_username(username)
+        if not user:
+            return jsonify({'success': False, 'error': 'Sai ten dang nhap hoac mat khau'}), 401
+
+        if not user.get('is_active'):
+            return jsonify({'success': False, 'error': 'Tai khoan da bi khoa'}), 403
+
+        if not verify_password(password, user['password_hash']):
+            return jsonify({'success': False, 'error': 'Sai ten dang nhap hoac mat khau'}), 401
+
+        # Set session
+        # Set session (không dùng permanent để tắt trình duyệt là văng)
+        session['user_id'] = user['id']
+        session['username'] = user['username']
+        session['full_name'] = user.get('full_name') or user['username']
+        session['role'] = user.get('role', 'user')
+
+        update_last_login(user['id'])
+
+        return jsonify({
+            'success': True,
+            'user': {
+                'id': user['id'],
+                'username': user['username'],
+                'full_name': user.get('full_name'),
+                'role': user.get('role', 'user'),
+            }
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/auth/logout', methods=['POST'])
+def api_auth_logout():
+    """Logout current user."""
+    session.clear()
+    return jsonify({'success': True})
+
+
+@app.route('/api/auth/me', methods=['GET'])
+def api_auth_me():
+    """Get current logged-in user info."""
+    if not session.get('user_id'):
+        return jsonify({'success': False, 'error': 'Chua dang nhap'}), 401
+    return jsonify({
+        'success': True,
+        'user': {
+            'id': session.get('user_id'),
+            'username': session.get('username'),
+            'full_name': session.get('full_name'),
+            'role': session.get('role', 'user'),
+        }
+    })
+
+
+@app.route('/api/auth/register', methods=['POST'])
+def api_auth_register():
+    """Register a new user (admin only or when no users exist)."""
+    try:
+        # Only admin or first setup can register
+        caller_role = session.get('role')
+        if caller_role != 'admin' and DB_AVAILABLE and count_users() > 0:
+            return jsonify({'success': False, 'error': 'Khong co quyen tao tai khoan'}), 403
+
+        data = request.json or {}
+        username = (data.get('username') or '').strip()
+        password = data.get('password') or ''
+        full_name = (data.get('full_name') or '').strip() or None
+        email = (data.get('email') or '').strip() or None
+        role = data.get('role', 'user')
+
+        if not username or not password:
+            return jsonify({'success': False, 'error': 'Vui long nhap ten dang nhap va mat khau'}), 400
+        if len(password) < 6:
+            return jsonify({'success': False, 'error': 'Mat khau phai co it nhat 6 ky tu'}), 400
+        if role not in ('admin', 'user'):
+            role = 'user'
+
+        if not DB_AVAILABLE:
+            return jsonify({'success': False, 'error': 'Database khong kha dung'}), 503
+
+        existing = get_user_by_username(username)
+        if existing:
+            return jsonify({'success': False, 'error': 'Ten dang nhap da ton tai'}), 409
+
+        user_id = create_user(username, password, full_name=full_name, email=email, role=role)
+        if not user_id:
+            return jsonify({'success': False, 'error': 'Khong the tao tai khoan'}), 500
+
+        return jsonify({'success': True, 'user_id': user_id, 'username': username})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+
+@app.route('/api/mode', methods=['GET', 'POST'])
+def api_control_mode():
+    """
+    Get/set control mode for actuators.
+    - software: keep existing Wokwi/Firebase control flow
+    - hardware: prepare to control real device (stub now, wire later)
+    """
+    if request.method == 'GET':
+        return jsonify({'success': True, 'mode': get_control_mode()})
+
+    try:
+        data = request.json or {}
+        mode = data.get('mode')
+        mode = set_control_mode(mode)
+        return jsonify({'success': True, 'mode': mode, 'message': f'Đã chuyển sang chế độ: {mode}'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+@app.route('/api/chat', methods=['POST'])
+def api_chat():
+    """
+    Chat endpoint for UI.
+    Body: { session_id: string, message: string }
+    """
+    try:
+        data = request.json or {}
+        session_id = (data.get('session_id') or 'default').strip()[:64]
+        message = (data.get('message') or '').strip()
+        if not message:
+            return jsonify({'success': False, 'error': 'message required'}), 400
+
+        _append_session_history(session_id, 'user', message)
+
+        text = message.lower()
+        reply = None
+
+        import re
+
+        # Ý định: Đặt nhiệt độ
+        # Match VD: chỉnh nhiệt độ 5, giảm xuống 4, đặt thành 4°C
+        set_temp_match = re.search(r'(chỉnh|đặt|thay|set|giảm|tăng|hạ|cho).*?(-?\d+\.?\d*)', text)
+        if reply is None and set_temp_match and any(k in text for k in ['nhiệt', 'độ', '°c', 'c']):
+            try:
+                target = float(set_temp_match.group(2))
+                r = _tool_set_temperature(target)
+                extra = " (chế độ giả lập)" if r.get('hardware_stub') else ""
+                reply = f"Đã điều chỉnh nhiệt độ mục tiêu thành {r.get('target_temperature')}°C.{extra}"
+            except ValueError:
+                pass
+
+        # Ý định: Hỏi nhiệt độ, độ ẩm hiện tại
+        if reply is None and any(k in text for k in ['nhiệt độ', 'nhiet do', 'độ ẩm', 'do am', 'lạnh', 'nóng']):
+            s = _tool_get_sensors()
+            reply = (
+                f"Nhiệt độ hiện tại: {s.get('temperature')}°C\n"
+                f"Độ ẩm: {s.get('humidity')}%\n"
+                f"Mục tiêu đang đặt: {s.get('target_temperature')}°C"
+            )
+
+        # Ý định: Hỏi trong tủ có gì, trái cây
+        if reply is None and any(k in text for k in ['trong tủ', 'trong tu', 'có gì', 'trái cây', 'trai cay', 'táo', 'chuối', 'cam', 'hỏng', 'hư', 'bao nhiêu']):
+            inv = _tool_get_inventory()
+            all_items = inv.get('fruits', []) + inv.get('foods', []) + inv.get('other', [])
+            
+            if not inv.get('last_detection'):
+                reply = "Mình chưa có dữ liệu camera gần đây. Bạn hãy bật camera / quét AI trước nhé!"
+            elif not all_items:
+                reply = "Tủ đang trống, không phát hiện thấy trái cây hay thực phẩm nào."
+            else:
+                from collections import Counter
+                counts = Counter(all_items)
+                
+                # Check for rotten
+                rotten_items = [k for k in counts.keys() if 'rotten' in k.lower() or 'spoiled' in k.lower() or 'hư' in k.lower() or 'hỏng' in k.lower()]
+                
+                details = []
+                for item, qty in counts.items():
+                    name = item.replace('_', ' ').title()
+                    # Translate known english classes
+                    nl = name.lower()
+                    if 'fresh apple' in nl: name = "Táo tươi"
+                    elif 'rotten apple' in nl: name = "Táo hỏng"
+                    elif 'fresh banana' in nl: name = "Chuối tươi"
+                    elif 'rotten banana' in nl: name = "Chuối hỏng"
+                    elif 'fresh orange' in nl: name = "Cam tươi"
+                    elif 'rotten orange' in nl: name = "Cam hỏng"
+                    details.append(f"- {qty} {name}")
+                
+                reply = f"Trong tủ hiện có {len(all_items)} món:\n" + "\n".join(details)
+                if rotten_items:
+                    reply += "\n\nLưu ý: Phát hiện có trái cây đang bị hỏng, bạn kiểm tra và dọn dẹp nhé!"
+
+        if reply is None:
+            reply = (
+                "Chào bạn, mình có thể giúp bạn:\n"
+                "- Báo cáo nhiệt độ, độ ẩm hiện tại\n"
+                "- Cài đặt nhiệt độ tủ (VD: 'Chỉnh nhiệt độ 5 độ')\n"
+                "- Kiểm tra số lượng và tình trạng trái cây trong tủ"
+            )
+
+        _append_session_history(session_id, 'assistant', reply)
+        return jsonify({'success': True, 'reply': reply, 'session_id': session_id})
+    except Exception as e:
+        msg = str(e)
+        return jsonify({'success': False, 'error': msg}), 500
 
 @app.route('/api/sensors', methods=['GET'])
 def get_sensors():
@@ -790,10 +1184,12 @@ def set_temperature():
     except (TypeError, ValueError):
         current_temp = target_temp
     
-    # Gửi lệnh PWM tới Firebase (Wokwi ESP32) - ESP32 đọc /Control/Peltier
+    mode = get_control_mode()
+
+    # Gửi lệnh PWM tới Firebase (Wokwi ESP32) - ESP32 đọc /Control/Peltier (software mode)
     pwm_sent = None
     firebase_error = None
-    if FIREBASE_AVAILABLE:
+    if mode == 'software' and FIREBASE_AVAILABLE:
         try:
             # Chuyển đổi target temp -> PWM: nhiệt độ cao hơn mục tiêu = cần làm lạnh = PWM cao
             diff = current_temp - target_temp
@@ -819,21 +1215,33 @@ def set_temperature():
         except Exception as e:
             print(f"⚠ Error saving temperature setting to database: {e}")
     
-    # Control hardware if available (Raspberry Pi thật)
-    if HARDWARE_AVAILABLE:
-        control_status = set_temperature_control(target_temp, current_temp)
-        sensor_data['status'] = control_status
+    # Control hardware if available (hardware mode)
+    hardware_stub = False
+    if mode == 'hardware':
+        if HARDWARE_AVAILABLE:
+            try:
+                control_status = set_temperature_control(target_temp, current_temp)
+                sensor_data['status'] = control_status
+            except Exception as e:
+                return jsonify({'success': False, 'error': f'Hardware control error: {e}'}), 500
+        else:
+            # Chưa gắn phần cứng: để sẵn, nhưng không đụng flow phần mềm.
+            hardware_stub = True
     
-    # Thông báo lỗi nếu Firebase không gửi được
+    # Thông báo theo mode
     msg = f'Nhiệt độ đã cài đặt: {target_temp}°C'
-    if firebase_error:
+    msg += f' | mode={mode}'
+    if mode == 'software' and firebase_error:
         msg += f' (⚠ Lỗi Firebase: {firebase_error})'
+    if hardware_stub:
+        msg += ' (Chế độ phần cứng: chưa gắn phần cứng, đang để stub)'
     
     return jsonify({
         'success': True,
         'target_temperature': sensor_data['target_temperature'],
         'pwm_sent': pwm_sent,
         'current_temp': current_temp,
+        'mode': mode,
         'message': msg
     })
 
@@ -1084,6 +1492,14 @@ def detect_objects():
             cv2.imwrite(image_path, annotated_img)
         except Exception as e:
             print(f"⚠ Error saving image: {e}")
+
+        # Update latest detection cache (for chatbot/UI)
+        try:
+            latest_detection['updated_at'] = datetime.now().isoformat()
+            latest_detection['image_filename'] = image_filename
+            latest_detection['detections'] = detections
+        except Exception as e:
+            print(f"⚠ Error updating latest_detection: {e}")
         
         if has_rotten and image_path:
             for fruit in rotten_fruits:
@@ -1369,6 +1785,16 @@ def reset_inventory_endpoint():
         return jsonify({'success': True, 'message': 'Inventory reset to zero'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/detections/latest', methods=['GET'])
+def get_latest_detections():
+    """Get latest detailed detections (for chatbot/UI)."""
+    return jsonify({
+        'success': True,
+        'updated_at': latest_detection.get('updated_at'),
+        'image_filename': latest_detection.get('image_filename'),
+        'detections': latest_detection.get('detections', [])
+    })
 
 @app.route('/api/stats', methods=['GET'])
 def get_stats():

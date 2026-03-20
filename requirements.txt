@@ -7,6 +7,9 @@ Pillow==10.2.0
 mysql-connector-python==8.2.0
 requests==2.31.0
 
+# Gemini AI (chatbot)
+google-generativeai==0.8.5
+
 # Optional dependencies for IoT sensors (uncomment if using)
 # Adafruit-DHT==1.4.0  # For DHT22 temperature/humidity sensor
 # RPi.GPIO==0.7.1  # For Raspberry Pi GPIO

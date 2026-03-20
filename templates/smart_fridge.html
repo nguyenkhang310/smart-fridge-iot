@@ -1,0 +1,2474 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tủ Lạnh Thông Minh IoT</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f3f4f6;
+            min-height: 100vh;
+            padding: 0;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: #ffffff;
+            padding: 0 24px 40px;
+        }
+
+        .university-header {
+            background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+            color: white;
+            padding: 20px 40px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+
+        .university-header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .logo-circle {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 4px solid #2563eb;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            overflow: hidden;
+            padding: 5px;
+        }
+
+        .logo-circle svg {
+            width: 70px;
+            height: 70px;
+        }
+
+        .logo-circle img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            border-radius: 50%;
+        }
+
+        .university-info {
+            flex: 1;
+        }
+
+        .university-name {
+            font-size: 1.4em;
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: white;
+        }
+
+        .university-name-en {
+            font-size: 0.9em;
+            opacity: 0.9;
+            font-style: italic;
+        }
+
+        .project-title {
+            text-align: center;
+            padding: 30px 20px;
+            background: #f8f9fa;
+            border-bottom: 3px solid #2563eb;
+            margin-bottom: 30px;
+        }
+
+        .project-title h1 {
+            font-size: 2.2em;
+            color: #2563eb;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        .project-title p {
+            font-size: 1.1em;
+            color: #64748b;
+            margin: 0;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            border: 1px solid #e2e8f0;
+            transition: all 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 12px rgba(30, 58, 138, 0.15);
+            border-color: #2563eb;
+        }
+
+        /* Floating Chatbot */
+        .chat-fab {
+            position: fixed;
+            right: 28px;
+            bottom: 28px;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #2563eb 0%, #1e3a8a 100%);
+            box-shadow: 0 10px 25px rgba(37, 99, 235, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            cursor: pointer;
+            z-index: 1400;
+            border: none;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .chat-fab:hover {
+            transform: scale(1.08) translateY(-4px);
+            box-shadow: 0 15px 35px rgba(37, 99, 235, 0.5);
+        }
+
+        .chat-fab-icon {
+            width: 28px; height: 28px;
+        }
+
+        .chat-fab-badge {
+            position: absolute;
+            top: -2px; right: -2px;
+            min-width: 20px; height: 20px;
+            border-radius: 50%;
+            background: #ef4444; color: white;
+            font-size: 11px; font-weight: bold;
+            display: flex; align-items: center; justify-content: center;
+            border: 2px solid #eff6ff;
+            animation: pulse-red 2s infinite;
+        }
+
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+
+        .chat-panel {
+            position: fixed;
+            right: 28px; bottom: 100px;
+            width: 380px; max-width: calc(100vw - 40px);
+            height: 560px; max-height: calc(100vh - 140px);
+            display: none; flex-direction: column;
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(24px) saturate(180%);
+            -webkit-backdrop-filter: blur(24px) saturate(180%);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(255,255,255,0.5) inset;
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            overflow: hidden;
+            z-index: 1350;
+            transform-origin: bottom right;
+            animation: chatPop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        @keyframes chatPop {
+            0% { opacity: 0; transform: scale(0.8) translateY(20px); }
+            100% { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        .chat-panel-header {
+            padding: 16px 20px;
+            display: flex; align-items: center; justify-content: space-between;
+            background: linear-gradient(135deg, rgba(37, 99, 235, 0.95) 0%, rgba(29, 78, 216, 0.95) 100%);
+            color: white;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .chat-panel-header-left {
+            display: flex; align-items: center; gap: 12px;
+        }
+
+        .chat-panel-avatar {
+            width: 36px; height: 36px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.4);
+            font-weight: 700; font-size: 0.9em; position: relative;
+        }
+
+        .chat-panel-avatar-dot {
+            position: absolute; right: 0; bottom: 0;
+            width: 10px; height: 10px; border-radius: 50%;
+            background: #22c55e; border: 2px solid #1d4ed8;
+        }
+
+        .chat-panel-title {
+            display: flex; flex-direction: column;
+        }
+
+        .chat-panel-title span:first-child { font-weight: 600; font-size: 1.05em; letter-spacing: 0.3px; }
+        .chat-panel-title span:last-child { font-size: 0.8em; opacity: 0.85; margin-top: 2px; }
+
+        .chat-panel-close {
+            background: rgba(255,255,255,0.1); border: none; color: white;
+            width: 30px; height: 30px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; font-size: 20px; transition: 0.2s;
+        }
+
+        .chat-panel-close:hover { background: rgba(255,255,255,0.25); transform: rotate(90deg); }
+
+        .chat-wrap { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+
+        .chat-messages {
+            flex: 1; overflow-y: auto; padding: 16px;
+            display: flex; flex-direction: column; gap: 12px;
+            scroll-behavior: smooth;
+        }
+
+        .chat-messages::-webkit-scrollbar { width: 5px; }
+        .chat-messages::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.5); border-radius: 10px; }
+
+        .chat-row { display: flex; opacity: 0; animation: slideUp 0.3s ease forwards; }
+        @keyframes slideUp { to { opacity: 1; transform: translateY(0); } }
+
+        .chat-row.user { justify-content: flex-end; }
+        .chat-row.assistant { justify-content: flex-start; }
+
+        .chat-bubble {
+            max-width: 80%; padding: 10px 14px;
+            border-radius: 18px; line-height: 1.45; font-size: 0.92em;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.04);
+            position: relative;
+        }
+
+        .chat-bubble.user {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: white; border-bottom-right-radius: 4px;
+        }
+
+        .chat-bubble.assistant {
+            background: rgba(255, 255, 255, 0.9);
+            color: #1e293b; border-bottom-left-radius: 4px;
+            border: 1px solid rgba(226, 232, 240, 0.8);
+        }
+
+        /* Typing indicator */
+        .typing-indicator {
+            display: flex; gap: 4px; padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.9); border-radius: 18px;
+            border-bottom-left-radius: 4px; width: fit-content;
+            border: 1px solid rgba(226, 232, 240, 0.8);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.04);
+        }
+
+        .typing-dot {
+            width: 6px; height: 6px; background: #94a3b8; border-radius: 50%;
+            animation: typingBounce 1.4s infinite ease-in-out both;
+        }
+
+        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+
+        @keyframes typingBounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+
+        /* Quick Replies */
+        .quick-replies {
+            display: flex; gap: 8px; padding: 0 16px 12px; overflow-x: auto;
+            scrollbar-width: none;
+        }
+        .quick-replies::-webkit-scrollbar { display: none; }
+        .quick-reply-btn {
+            background: rgba(239, 246, 255, 0.8); border: 1px solid #bfdbfe;
+            color: #1d4ed8; padding: 6px 12px; border-radius: 16px;
+            font-size: 0.82em; white-space: nowrap; cursor: pointer; transition: 0.2s;
+        }
+        .quick-reply-btn:hover { background: #dbeafe; transform: translateY(-1px); }
+
+        .chat-input-container {
+            padding: 12px 16px; background: rgba(255,255,255,0.7);
+            border-top: 1px solid rgba(226, 232, 240, 0.6);
+            backdrop-filter: blur(10px);
+        }
+
+        .chat-input {
+            display: flex; gap: 10px; align-items: center;
+        }
+
+        .chat-input input {
+            flex: 1; padding: 12px 16px; border-radius: 20px;
+            border: 1px solid #cbd5e1; outline: none; font-size: 0.92em;
+            background: rgba(255, 255, 255, 0.9);
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
+            transition: all 0.2s;
+        }
+
+        .chat-input input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
+
+        .chat-input button {
+            width: 42px; height: 42px; border-radius: 50%;
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            display: flex; align-items: center; justify-content: center;
+            border: none; color: white; cursor: pointer; transition: 0.2s;
+            box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3); padding: 0;
+        }
+
+        .chat-input button:hover { transform: scale(1.05); }
+        .chat-input button svg { width: 20px; height: 20px; transform: translateX(-1px) translateY(1px); }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .card-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 999px;
+            margin-right: 15px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: #e0edff;
+            border: 1px solid #bfdbfe;
+        }
+
+        .card-icon svg {
+            width: 22px;
+            height: 22px;
+            stroke: #1d4ed8;
+        }
+
+        .card-title {
+            font-size: 1.3em;
+            font-weight: 600;
+            color: #2563eb;
+        }
+
+        .sensor-value {
+            font-size: 3em;
+            font-weight: bold;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .temperature-value {
+            color: #3b82f6;
+        }
+
+        .humidity-value {
+            color: #059669;
+        }
+
+        .sensor-unit {
+            font-size: 0.5em;
+            color: #7f8c8d;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .status-online {
+            background: #2ecc71;
+            box-shadow: 0 0 10px #2ecc71;
+        }
+
+        .status-offline {
+            background: #e74c3c;
+        }
+
+        .control-section {
+            margin-top: 20px;
+        }
+
+        .slider-container {
+            margin: 20px 0;
+        }
+
+        .slider {
+            width: 100%;
+            height: 8px;
+            border-radius: 5px;
+            background: #d3d3d3;
+            outline: none;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .slider::-moz-range-thumb {
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .slider-value {
+            text-align: center;
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #3b82f6;
+            margin: 10px 0;
+        }
+
+        button:not(.chat-panel-close):not(.chat-fab) {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 10px;
+        }
+
+        button:not(.chat-panel-close):not(.chat-fab):hover {
+            transform: scale(1.02);
+            box-shadow: 0 5px 15px rgba(30, 64, 175, 0.4);
+            background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+        }
+
+        button:not(.chat-panel-close):not(.chat-fab):active {
+            transform: scale(0.98);
+        }
+
+        .oled-display {
+            background: #000;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            padding: 20px;
+            border-radius: 10px;
+            min-height: 200px;
+            border: 3px solid #333;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .oled-line {
+            margin: 8px 0;
+            font-size: 0.9em;
+        }
+
+        .camera-section {
+            grid-column: 1 / -1;
+        }
+
+        .camera-container {
+            position: relative;
+            background: #f5f5f5;
+            border-radius: 10px;
+            overflow: hidden;
+            min-height: 400px;
+        }
+
+        #cameraFeed {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .upload-area {
+            border: 3px dashed #3b82f6;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: #f8f9fa;
+        }
+
+        .upload-area:hover {
+            background: #f1f5f9;
+            border-color: #2563eb;
+        }
+
+        .upload-area.dragover {
+            background: #e0e7ff;
+            border-color: #2563eb;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        .detection-results {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f0f8ff;
+            border-radius: 8px;
+        }
+
+        .detection-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px;
+            margin: 5px 0;
+            background: white;
+            border-radius: 5px;
+            border-left: 4px solid #3b82f6;
+        }
+
+        .object-count {
+            font-weight: bold;
+            color: #3b82f6;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .stat-box {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            margin-top: 5px;
+            opacity: 0.9;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #e0e0e0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3b82f6 0%, #2563eb 100%);
+            transition: width 0.5s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+            display: none;
+        }
+
+        .alert-warning {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            color: #856404;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+            color: #155724;
+        }
+
+        canvas {
+            max-width: 100%;
+            border-radius: 10px;
+        }
+
+        /* System status bar */
+        .system-status {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px 24px;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 18px;
+            border-radius: 10px;
+            background: #eff6ff;
+            border: 1px solid #dbeafe;
+            margin-bottom: 24px;
+        }
+
+        .system-status-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px 18px;
+            align-items: center;
+        }
+
+        .system-status-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.9em;
+            color: #1f2933;
+        }
+
+        /* Control mode toggle */
+        .mode-toggle {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            border-radius: 10px;
+            background: rgba(255,255,255,0.6);
+            border: 1px solid rgba(219,234,254,0.9);
+        }
+
+        .mode-toggle-label {
+            font-weight: 700;
+            color: #1d4ed8;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 52px;
+            height: 28px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .switch-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #94a3b8;
+            transition: 0.2s;
+            border-radius: 999px;
+        }
+
+        .switch-slider:before {
+            position: absolute;
+            content: "";
+            height: 22px;
+            width: 22px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.2s;
+            border-radius: 999px;
+            box-shadow: 0 2px 6px rgba(15, 23, 42, 0.25);
+        }
+
+        .switch input:checked + .switch-slider {
+            background-color: #16a34a;
+        }
+
+        .switch input:checked + .switch-slider:before {
+            transform: translateX(24px);
+        }
+
+        .mode-pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 10px;
+            border-radius: 999px;
+            font-size: 0.85em;
+            font-weight: 700;
+            border: 1px solid rgba(59,130,246,0.35);
+            color: #1d4ed8;
+            background: rgba(219,234,254,0.7);
+        }
+
+        .mode-pill--hardware {
+            border-color: rgba(34,197,94,0.35);
+            color: #166534;
+            background: rgba(220,252,231,0.75);
+        }
+
+        .system-status-label {
+            font-weight: 600;
+            color: #1d4ed8;
+        }
+
+        .system-status-value {
+            font-weight: 500;
+            color: #4b5563;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
+            background: #d1d5db;
+        }
+
+        .status-dot--ok {
+            background: #16a34a;
+            box-shadow: 0 0 8px rgba(22,163,74,0.7);
+        }
+
+        .status-dot--warn {
+            background: #f59e0b;
+            box-shadow: 0 0 8px rgba(245,158,11,0.7);
+        }
+
+        .status-dot--error {
+            background: #dc2626;
+            box-shadow: 0 0 8px rgba(220,38,38,0.7);
+        }
+
+        .status-dot--off {
+            background: #9ca3af;
+        }
+
+        .status-dot--unknown {
+            background: #e5e7eb;
+        }
+
+        /* Toast notifications */
+        .toast-container {
+            position: fixed;
+            left: 24px;
+            bottom: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 2000;
+        }
+
+        .toast {
+            min-width: 260px;
+            max-width: 360px;
+            padding: 12px 16px;
+            border-radius: 10px;
+            box-shadow: 0 10px 25px rgba(15, 23, 42, 0.25);
+            font-size: 0.9em;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            background: #111827;
+            color: #e5e7eb;
+            border: 1px solid rgba(55,65,81,0.8);
+        }
+
+        .toast--success {
+            background: #022c22;
+            border-color: #16a34a;
+        }
+
+        .toast--error {
+            background: #450a0a;
+            border-color: #dc2626;
+        }
+
+        .toast-title {
+            font-weight: 600;
+            margin-bottom: 2px;
+        }
+
+        .toast-body {
+            font-size: 0.9em;
+        }
+
+        .footer {
+            background: #2563eb;
+            color: white;
+            text-align: center;
+            padding: 20px;
+            margin-top: 40px;
+            border-top: 3px solid #3b82f6;
+        }
+
+        .footer p {
+            margin: 5px 0;
+            font-size: 0.9em;
+        }
+
+        /* Camera layout */
+        .camera-layout {
+            display: grid;
+            grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.1fr);
+            gap: 20px;
+        }
+
+        .camera-column {
+            min-width: 0;
+        }
+
+        @media (max-width: 900px) {
+            .camera-layout {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+            
+            .project-title h1 {
+                font-size: 1.8em;
+            }
+
+            .university-header {
+                padding: 15px 20px;
+            }
+
+            .university-header-content {
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .logo-circle {
+                width: 60px;
+                height: 60px;
+            }
+
+            .logo-circle svg {
+                width: 50px;
+                height: 50px;
+            }
+
+            .logo-circle img {
+                width: 100%;
+                height: 100%;
+            }
+
+            .university-name {
+                font-size: 1.1em;
+            }
+
+            .sensor-value {
+                font-size: 2.2em;
+            }
+
+            .system-status {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .blink {
+            animation: blink-animation 1s infinite;
+        }
+
+        @keyframes blink-animation {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* User widget in header */
+        .header-user-widget {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-left: auto;
+        }
+
+        .header-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.2);
+            border: 2px solid rgba(255,255,255,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.9em;
+            color: white;
+            letter-spacing: 0.5px;
+        }
+
+        .header-user-info {
+            display: flex;
+            flex-direction: column;
+            text-align: right;
+        }
+
+        .header-username {
+            font-weight: 600;
+            font-size: 0.9em;
+            color: white;
+            line-height: 1.2;
+        }
+
+        .header-role {
+            font-size: 0.72em;
+            color: rgba(255,255,255,0.75);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-logout {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 14px;
+            border: 1.5px solid rgba(255,255,255,0.45);
+            border-radius: 8px;
+            background: rgba(255,255,255,0.12);
+            color: white;
+            font-size: 0.82em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
+            white-space: nowrap;
+            width: auto !important;
+            margin-top: 0 !important;
+        }
+
+        .btn-logout:hover {
+            background: rgba(255,255,255,0.22) !important;
+            border-color: rgba(255,255,255,0.8) !important;
+            transform: none !important;
+            box-shadow: none !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="university-header">
+        <div class="university-header-content">
+            <div class="logo-container">
+                <div class="logo-circle">
+                    <img src="/static/img/logo-hcm-ute.png" alt="Logo" id="headerLogo" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" />
+                    <!-- Fallback SVG nếu logo không load được -->
+                    <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" style="display: none;">
+                        <circle cx="50" cy="50" r="48" fill="none" stroke="#2563eb" stroke-width="3"/>
+                        <circle cx="50" cy="50" r="44" fill="none" stroke="white" stroke-width="1.5"/>
+                        <circle cx="50" cy="50" r="40" fill="none" stroke="#2563eb" stroke-width="1.5"/>
+                        <path d="M 30 70 Q 25 65 30 60 Q 35 55 40 60 Q 35 65 30 70" fill="#dc2626"/>
+                        <path d="M 70 70 Q 65 65 70 60 Q 75 55 80 60 Q 75 65 70 70" fill="#dc2626"/>
+                        <rect x="35" y="50" width="30" height="15" fill="none" stroke="#dc2626" stroke-width="2"/>
+                        <line x1="50" y1="50" x2="50" y2="65" stroke="#dc2626" stroke-width="1"/>
+                        <circle cx="50" cy="45" r="8" fill="#3b82f6"/>
+                        <circle cx="50" cy="45" r="5" fill="white"/>
+                        <rect x="48" y="30" width="4" height="15" fill="#3b82f6"/>
+                        <path d="M 48 30 Q 50 25 52 30" fill="#dc2626"/>
+                        <path d="M 47 28 Q 50 22 53 28" fill="#f97316"/>
+                        <polygon points="25,45 30,50 25,55" fill="#3b82f6"/>
+                        <polygon points="75,45 70,50 75,55" fill="#3b82f6"/>
+                    </svg>
+                </div>
+            </div>
+            <div class="university-info">
+                <div class="university-name">TRƯỜNG ĐẠI HỌC CÔNG NGHỆ KỸ THUẬT TP.HCM</div>
+                <div class="university-name-en">Ho Chi Minh City University of Technology and Engineering</div>
+            </div>
+            <div class="header-user-widget">
+                <div class="header-user-info">
+                    <span class="header-username" id="headerUsername">--</span>
+                    <span class="header-role" id="headerRole">--</span>
+                </div>
+                <div class="header-avatar" id="headerAvatar">?</div>
+                <button class="btn-logout" id="btnLogout" onclick="handleLogout()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                    Dang xuat
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="project-title">
+            <h1>HỆ THỐNG TỦ LẠNH THÔNG MINH IoT</h1>
+            <p>Smart Fridge IoT System - Giám sát và điều khiển tích hợp AI</p>
+        </div>
+
+        <div class="system-status">
+            <div class="system-status-group">
+                <div class="system-status-item">
+                    <span class="status-dot status-dot--unknown" id="statusApiDot"></span>
+                    <span class="system-status-label">API</span>
+                    <span class="system-status-value" id="statusApiText">Đang kiểm tra...</span>
+                </div>
+                <div class="system-status-item">
+                    <span class="status-dot status-dot--unknown" id="statusFirebaseDot"></span>
+                    <span class="system-status-label">Firebase</span>
+                    <span class="system-status-value" id="statusFirebaseText">Chưa xác định</span>
+                </div>
+                <div class="system-status-item">
+                    <span class="status-dot status-dot--unknown" id="statusDbDot"></span>
+                    <span class="system-status-label">Database</span>
+                    <span class="system-status-value" id="statusDbText">Chưa xác định</span>
+                </div>
+                <div class="system-status-item">
+                    <span class="status-dot status-dot--unknown" id="statusCameraDot"></span>
+                    <span class="system-status-label">Camera</span>
+                    <span class="system-status-value" id="statusCameraText">Chưa kiểm tra</span>
+                </div>
+            </div>
+            <div class="system-status-group" style="justify-content: flex-end;">
+                <div class="system-status-item">
+                    <span class="system-status-label">Lần cập nhật cảm biến:</span>
+                    <span class="system-status-value" id="statusLastUpdate">--</span>
+                </div>
+                <div class="mode-toggle" title="Gạt để chuyển chế độ điều khiển: Phần mềm (Wokwi) / Phần cứng (để sẵn)">
+                    <span class="mode-toggle-label">Chế độ:</span>
+                    <span class="mode-pill" id="modePill">PHẦN MỀM</span>
+                    <label class="switch" aria-label="Chuyển chế độ điều khiển">
+                        <input type="checkbox" id="modeSwitch" />
+                        <span class="switch-slider"></span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <div class="dashboard">
+            <!-- Temperature Card -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none">
+                            <path d="M10 4a2 2 0 1 1 4 0v7.17a4 4 0 1 1-4 0V4z" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                            <circle cx="12" cy="16" r="1.4" fill="#1d4ed8"/>
+                        </svg>
+                    </span>
+                    <div>
+                        <div class="card-title">Nhiệt Độ</div>
+                        <small><span class="status-indicator status-online"></span>Đang hoạt động</small>
+                    </div>
+                </div>
+                <div class="sensor-value temperature-value">
+                    <span id="temperature">4.5</span><span class="sensor-unit">°C</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="tempProgress" style="width: 45%">45%</div>
+                </div>
+                <div class="alert alert-warning" id="tempAlert">
+                    Nhiệt độ cao hơn mức khuyến nghị!
+                </div>
+            </div>
+
+            <!-- Humidity Card -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none">
+                            <path d="M12 3.5C10 7 7 9.5 7 13a5 5 0 0 0 10 0c0-3.5-3-6-5-9.5z" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </span>
+                    <div>
+                        <div class="card-title">Độ Ẩm</div>
+                        <small><span class="status-indicator status-online"></span>Đang hoạt động</small>
+                    </div>
+                </div>
+                <div class="sensor-value humidity-value">
+                    <span id="humidity">65</span><span class="sensor-unit">%</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="humidityProgress" style="width: 65%">65%</div>
+                </div>
+            </div>
+
+            <!-- Temperature Control Card -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none">
+                            <rect x="4" y="6" width="16" height="12" rx="2" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                            <circle cx="9" cy="12" r="1.4" fill="#1d4ed8"/>
+                            <path d="M13 12h4" stroke-width="1.6" stroke-linecap="round"/>
+                        </svg>
+                    </span>
+                    <div class="card-title">Điều Chỉnh Nhiệt Độ</div>
+                </div>
+                <div class="control-section" id="tempControlSection">
+                    <div class="slider-value">
+                        <span id="targetTemp">4</span>°C
+                    </div>
+                    <div class="slider-container">
+                        <input type="range" min="-2" max="10" value="4" class="slider" id="tempSlider">
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.9em; color: #7f8c8d; margin-top: 5px;">
+                        <span>-2°C</span>
+                        <span>10°C</span>
+                    </div>
+                    <button onclick="setTemperature()" id="btnSetTemp">Cập nhật nhiệt độ</button>
+                    <div class="alert alert-success" id="tempSetAlert">
+                        Nhiệt độ đã được cài đặt thành công!
+                    </div>
+                    <!-- Thông báo hiển thị cho user không có quyền -->
+                    <div id="tempReadonlyNotice" style="display:none; margin-top:10px; padding:10px 14px; background:rgba(234,179,8,0.12); border:1px solid rgba(234,179,8,0.3); border-radius:8px; color:#b45309; font-size:0.85em; text-align:center;">
+                        Chỉ Quản trị viên mới có thể điều chỉnh nhiệt độ
+                    </div>
+                </div>
+            </div>
+
+            <!-- OLED Display Card -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none">
+                            <rect x="3.5" y="5" width="17" height="11" rx="2" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M8 18.5h8" stroke-width="1.6" stroke-linecap="round"/>
+                        </svg>
+                    </span>
+                    <div class="card-title">Màn Hình OLED</div>
+                </div>
+                <div class="oled-display" id="oledDisplay">
+                    <div class="oled-line blink">████ SMART FRIDGE ████</div>
+                    <div class="oled-line">──────────────────────</div>
+                    <div class="oled-line">Temp: <span id="oledTemp">4.5</span>°C</div>
+                    <div class="oled-line">Humidity: <span id="oledHumidity">65</span>%</div>
+                    <div class="oled-line">Status: <span id="oledStatus">NORMAL</span></div>
+                    <div class="oled-line">──────────────────────</div>
+                    <div class="oled-line">Items: <span id="oledItems">12</span> | Fruits: <span id="oledFruits">8</span></div>
+                    <div class="oled-line">Time: <span id="oledTime">--:--:--</span></div>
+                </div>
+            </div>
+
+            <!-- Inventory Stats -->
+            <div class="card" style="grid-column: 1 / -1;">
+                <div class="card-header">
+                    <span class="card-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none">
+                            <path d="M5 19V10" stroke-width="1.6" stroke-linecap="round"/>
+                            <path d="M12 19V5" stroke-width="1.6" stroke-linecap="round"/>
+                            <path d="M19 19v-7" stroke-width="1.6" stroke-linecap="round"/>
+                        </svg>
+                    </span>
+                    <div class="card-title">Thống Kê Số Vật Phẩm Trong Tủ Lạnh</div>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-box">
+                        <div class="stat-number" id="totalItems">0</div>
+                        <div class="stat-label">Tổng vật phẩm</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-number" id="fruitCount">0</div>
+                        <div class="stat-label">Trái cây</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-number" id="foodCount">0</div>
+                        <div class="stat-label">Thực phẩm</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-number" id="otherCount">0</div>
+                        <div class="stat-label">Khác</div>
+                    </div>
+                </div>
+            </div>
+
+<!-- Camera & YOLO Detection -->
+    <div class="card camera-section">
+        <div class="card-header">
+            <span class="card-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                    <rect x="3" y="7" width="14" height="10" rx="2" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                    <circle cx="10" cy="12" r="3" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M19 10.5v3l2-1.2v-0.6l-2-1.2z" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </span>
+            <div style="flex: 1;">
+                <div class="card-title">Camera & Nhận Diện AI (YOLO)</div>
+                <small id="detectionMode" style="color: #3b82f6;">
+                    <span class="status-indicator status-online"></span>Camera sẵn sàng
+                </small>
+            </div>
+        </div>
+
+        <!-- Nút điều khiển camera -->
+        <div style="margin-bottom: 20px;">
+            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                <button onclick="startLiveCamera('webcam')" id="startWebcamBtn" style="flex: 1;">
+                    Webcam
+                </button>
+                <button onclick="startLiveCamera('esp32')" id="startESP32Btn" style="flex: 1;">
+                    ESP32-CAM
+                </button>
+                <button onclick="stopLiveCamera()" id="stopCameraBtn" style="flex: 1; background: #e74c3c; display: none;">
+                    Tắt camera
+                </button>
+            </div>
+
+            <!-- Live Camera Feed -->
+            <div id="liveCameraContainer" style="display: none; margin-bottom: 20px;">
+                <div style="background: #000; border-radius: 10px; overflow: hidden; position: relative; min-height: 300px;">
+                    <div id="cameraLoading" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; text-align: center; z-index: 10;">
+                        <div class="loading" style="margin: 0 auto 10px;"></div>
+                        <div>Đang kết nối camera...</div>
+                    </div>
+                    <img id="liveCameraFeed" src="" alt="Live Camera Feed" style="width: 100%; display: block; min-height: 300px; object-fit: contain; background: #000;">
+                    <div id="cameraStatus" style="position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.7); color: white; padding: 5px 10px; border-radius: 5px; font-size: 0.9em; z-index: 5;">
+                        Đang phát trực tiếp...
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Upload ảnh -->
+        <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+            <p style="font-size: 1.2em; margin-bottom: 10px;">Tải ảnh lên để phân tích</p>
+            <p style="color: #7f8c8d;">Kéo thả ảnh hoặc click để chọn</p>
+            <input type="file" id="fileInput" accept="image/*" onchange="handleImageUpload(event)">
+        </div>
+
+        <!-- Ảnh sau khi upload -->
+        <div class="camera-container" id="cameraContainer" style="display: none; margin-top: 20px;">
+            <canvas id="canvas"></canvas>
+        </div>
+
+        <!-- Kết quả nhận diện -->
+        <div class="detection-results" id="detectionResults" style="display: none;">
+            <h3 style="margin-bottom: 12px;">Kết quả nhận diện</h3>
+            <div style="display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap;">
+                <button type="button" style="flex: none; width: auto; padding: 6px 12px; font-size: 0.9em;" onclick="displayDetectionResults('all')">
+                    Tất cả
+                </button>
+                <button type="button" style="flex: none; width: auto; padding: 6px 12px; font-size: 0.9em; background: #059669;" onclick="displayDetectionResults('fruit')">
+                    Trái cây
+                </button>
+                <button type="button" style="flex: none; width: auto; padding: 6px 12px; font-size: 0.9em; background: #0ea5e9;" onclick="displayDetectionResults('food')">
+                    Thực phẩm
+                </button>
+                <button type="button" style="flex: none; width: auto; padding: 6px 12px; font-size: 0.9em; background: #6b7280;" onclick="displayDetectionResults('other')">
+                    Khác
+                </button>
+            </div>
+            <div id="detectionList"></div>
+        </div>
+
+        <!-- Nút hành động -->
+        <div style="margin-top: 15px; display: flex; gap: 10px;">
+            <button onclick="analyzeImage()" style="flex: 1;" id="analyzeBtn" disabled>
+                Phân tích bằng AI
+            </button>
+            <button onclick="clearImage()" style="flex: 1; background: #e74c3c;">
+                Xóa ảnh
+            </button>
+        </div>
+    </div>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <p><strong>Trường Đại Học Công Nghệ Kỹ Thuật TP.HCM</strong></p>
+        <p>Ho Chi Minh City University of Technology and Engineering (HCM-UTE)</p>
+        <p style="margin-top: 10px; opacity: 0.8;">© 2026 - Hệ thống Tủ Lạnh Thông Minh IoT Được Thực Hiện Bởi Nhóm 3</p>
+    </footer>
+
+    <!-- Floating Chatbot -->
+    <button class="chat-fab" id="chatFab" type="button" aria-label="Mở chatbot">
+        <svg class="chat-fab-icon" viewBox="0 0 24 24" fill="none">
+            <rect x="3" y="4" width="18" height="14" rx="3" stroke="white" stroke-width="1.7"/>
+            <path d="M7 9h10" stroke="white" stroke-width="1.7" stroke-linecap="round"/>
+            <path d="M7 12h6" stroke="white" stroke-width="1.7" stroke-linecap="round"/>
+        </svg>
+        <div class="chat-fab-badge">AI</div>
+    </button>
+
+    <div class="chat-panel" id="chatPanel" aria-label="Chatbot AI">
+        <div class="chat-panel-header">
+            <div class="chat-panel-header-left">
+                <div class="chat-panel-avatar">
+                    AI
+                    <span class="chat-panel-avatar-dot"></span>
+                </div>
+                <div class="chat-panel-title">
+                    <span>Trợ Lý Tủ Lạnh AI</span>
+                    <span>Hỏi: nhiệt độ, inventory, trái cây...</span>
+                </div>
+            </div>
+            <button class="chat-panel-close" id="chatCloseBtn" title="Đóng">×</button>
+        </div>
+        <div class="chat-wrap">
+            <div class="chat-messages" id="chatMessages"></div>
+            
+            <div class="quick-replies" id="quickReplies">
+                <button class="quick-reply-btn" onclick="document.getElementById('chatInput').value='Trong tủ có gì?'; sendChat();">Trong tủ có đồ gì?</button>
+                <button class="quick-reply-btn" onclick="document.getElementById('chatInput').value='Nhiệt độ hiện tại?'; sendChat();">Nhiệt độ hiện tại?</button>
+                <button class="quick-reply-btn" onclick="document.getElementById('chatInput').value='Giảm nhiệt độ xuống 4 độ'; sendChat();">Chỉnh 4°C</button>
+            </div>
+
+            <div class="chat-input-container">
+                <div class="chat-input">
+                    <input id="chatInput" type="text" placeholder="Nhập tin nhắn..." autocomplete="off" />
+                    <button type="button" id="chatSendBtn" title="Gửi">
+                        <svg viewBox="0 0 24 24" fill="none">
+                            <path d="M22 2L11 13M22 2L15 22L11 13M11 13L2 9L22 2" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let currentImage = null;
+        let detectedObjects = [];
+        let liveCameraActive = false;
+        let liveCameraMode = null;
+
+        // Update temperature slider value
+        document.getElementById('tempSlider').addEventListener('input', function(e) {
+            document.getElementById('targetTemp').textContent = e.target.value;
+        });
+
+        // Real-time sensor data update using Server-Sent Events (SSE)
+        let sensorEventSource = null;
+        let databaseEnabled = null;
+        
+        function updateSensorDisplay(data) {
+            // Get temperature and humidity from data
+            const temp = parseFloat(data.temperature || 4.0).toFixed(1);
+            const humidity = Math.floor(data.humidity || 60);
+            
+            // Update display
+            document.getElementById('temperature').textContent = temp;
+            document.getElementById('humidity').textContent = humidity;
+            
+            // Update OLED display
+            document.getElementById('oledTemp').textContent = temp;
+            document.getElementById('oledHumidity').textContent = humidity;
+            
+            // Update progress bars
+            const tempPercent = ((parseFloat(temp) + 2) / 12) * 100;
+            document.getElementById('tempProgress').style.width = tempPercent + '%';
+            document.getElementById('tempProgress').textContent = Math.round(tempPercent) + '%';
+            
+            document.getElementById('humidityProgress').style.width = humidity + '%';
+            document.getElementById('humidityProgress').textContent = humidity + '%';
+            
+            // Temperature alert + OLED status
+            const oledStatusEl = document.getElementById('oledStatus');
+            const tempAlertEl = document.getElementById('tempAlert');
+            if (parseFloat(temp) > 6) {
+                if (tempAlertEl) tempAlertEl.style.display = 'block';
+                if (oledStatusEl) oledStatusEl.textContent = 'WARNING';
+            } else {
+                if (tempAlertEl) tempAlertEl.style.display = 'none';
+                if (oledStatusEl) oledStatusEl.textContent = 'NORMAL';
+            }
+
+            // Last update
+            if (data.last_update) {
+                const lastUpdateEl = document.getElementById('statusLastUpdate');
+                if (lastUpdateEl) {
+                    try {
+                        const dt = new Date(data.last_update);
+                        lastUpdateEl.textContent = dt.toLocaleString('vi-VN');
+                    } catch {
+                        lastUpdateEl.textContent = data.last_update;
+                    }
+                }
+            }
+            
+            // Show Firebase status if available
+            if (data.source) {
+                const firebaseDot = document.getElementById('statusFirebaseDot');
+                const firebaseText = document.getElementById('statusFirebaseText');
+                if (data.source === 'firebase_wokwi') {
+                    if (firebaseDot) {
+                        firebaseDot.classList.remove('status-dot--unknown', 'status-dot--off', 'status-dot--error');
+                        firebaseDot.classList.add('status-dot--ok');
+                    }
+                    if (firebaseText) {
+                        firebaseText.textContent = 'Đang nhận dữ liệu (Wokwi)';
+                    }
+                } else {
+                    if (firebaseDot && firebaseDot.classList.contains('status-dot--unknown')) {
+                        firebaseDot.classList.remove('status-dot--unknown');
+                        firebaseDot.classList.add('status-dot--off');
+                    }
+                    if (firebaseText && firebaseText.textContent === 'Chưa xác định') {
+                        firebaseText.textContent = 'Không dùng Firebase';
+                    }
+                }
+            }
+        }
+        
+        // Fetch sensor data from API (Firebase/Wokwi) - Fallback method
+        async function updateSensorData() {
+            try {
+                const response = await fetch('/api/sensors');
+                if (!response.ok) {
+                    throw new Error('API request failed');
+                }
+                const data = await response.json();
+                updateSensorDisplay(data);
+            } catch (error) {
+                console.warn('Failed to fetch sensor data, using fallback:', error);
+                // Fallback to simulated data if API fails
+                const temp = (4 + Math.random() * 2).toFixed(1);
+                const humidity = Math.floor(60 + Math.random() * 10);
+                
+                document.getElementById('temperature').textContent = temp;
+                document.getElementById('humidity').textContent = humidity;
+                document.getElementById('oledTemp').textContent = temp;
+                document.getElementById('oledHumidity').textContent = humidity;
+            }
+        }
+        
+        // Start Server-Sent Events stream for real-time updates
+        function startSensorStream() {
+            if (typeof EventSource === 'undefined') {
+                console.warn('EventSource not supported, using polling');
+                return;
+            }
+            
+            try {
+                sensorEventSource = new EventSource('/api/sensors/stream');
+                
+                sensorEventSource.onmessage = function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+                        updateSensorDisplay(data);
+                        
+                if (data.source === 'firebase_wokwi') {
+                            if (data.door_state !== undefined) {
+                                console.log(`Door: ${data.door_state === 1 ? 'Mở' : 'Đóng'}`);
+                            }
+                            if (data.pwm !== undefined) {
+                                console.log(`PWM Làm lạnh: ${data.pwm}/255`);
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Error parsing SSE data:', e);
+                    }
+                };
+                
+                sensorEventSource.onerror = function(error) {
+                console.warn('SSE connection error, falling back to polling:', error);
+                    if (sensorEventSource) {
+                        sensorEventSource.close();
+                        sensorEventSource = null;
+                    }
+                    // Fallback to polling
+                    setInterval(updateSensorData, 1000);
+                };
+                
+                console.log('✓ Real-time sensor stream connected (SSE)');
+            } catch (error) {
+                console.warn('Failed to start SSE stream, using polling:', error);
+                // Fallback to polling
+                setInterval(updateSensorData, 1000);
+            }
+        }
+
+        // Update OLED time
+        function updateOLEDTime() {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('vi-VN', { hour12: false });
+            document.getElementById('oledTime').textContent = timeStr;
+        }
+
+        function showToast(message, type = 'info') {
+            let container = document.getElementById('toastContainer');
+            if (!container) {
+                container = document.createElement('div');
+                container.id = 'toastContainer';
+                container.className = 'toast-container';
+                document.body.appendChild(container);
+            }
+
+            const toast = document.createElement('div');
+            toast.className = 'toast' + (type === 'success' ? ' toast--success' : type === 'error' ? ' toast--error' : '');
+            const content = document.createElement('div');
+
+            const title = document.createElement('div');
+            title.className = 'toast-title';
+            title.textContent = type === 'success' ? 'Thành công' : type === 'error' ? 'Lỗi' : 'Thông báo';
+
+            const body = document.createElement('div');
+            body.className = 'toast-body';
+            body.textContent = message;
+
+            content.appendChild(title);
+            content.appendChild(body);
+            toast.appendChild(content);
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(5px)';
+                setTimeout(() => {
+                    if (toast.parentNode) {
+                        toast.parentNode.removeChild(toast);
+                    }
+                }, 200);
+            }, 3500);
+        }
+
+        // ===== Control mode (Software/Wokwi vs Hardware) =====
+        async function loadControlMode() {
+            try {
+                const res = await fetch('/api/mode');
+                const data = await parseJsonResponse(res);
+                if (!data || !data.success) return;
+                applyControlModeToUI(data.mode);
+            } catch (e) {
+                console.warn('Could not load control mode:', e);
+            }
+        }
+
+        function applyControlModeToUI(mode) {
+            const pill = document.getElementById('modePill');
+            const sw = document.getElementById('modeSwitch');
+            const isHardware = (mode || '').toLowerCase() === 'hardware';
+            if (sw) sw.checked = isHardware;
+            if (pill) {
+                pill.textContent = isHardware ? 'PHẦN CỨNG' : 'PHẦN MỀM';
+                pill.classList.toggle('mode-pill--hardware', isHardware);
+            }
+        }
+
+        async function setControlMode(mode) {
+            const sw = document.getElementById('modeSwitch');
+            if (sw) sw.disabled = true;
+            try {
+                const res = await fetch('/api/mode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode })
+                });
+                const data = await parseJsonResponse(res);
+                if (data && data.success) {
+                    applyControlModeToUI(data.mode);
+                    showToast(`Đã chuyển chế độ: ${data.mode === 'hardware' ? 'Phần cứng' : 'Phần mềm (Wokwi)'}`, 'success');
+                }
+            } catch (e) {
+                showToast('Không thể đổi chế độ: ' + e.message, 'error');
+                // revert UI to last known by reloading
+                loadControlMode();
+            } finally {
+                if (sw) sw.disabled = false;
+            }
+        }
+
+        // Wire switch
+        const modeSwitchEl = document.getElementById('modeSwitch');
+        if (modeSwitchEl) {
+            modeSwitchEl.addEventListener('change', (e) => {
+                const isHardware = !!e.target.checked;
+                setControlMode(isHardware ? 'hardware' : 'software');
+            });
+        }
+
+        // Set temperature function - gửi lệnh tới API và Firebase/Wokwi ESP32
+        async function setTemperature() {
+            const targetTemp = parseFloat(document.getElementById('tempSlider').value);
+            const alert = document.getElementById('tempSetAlert');
+            const btn = document.querySelector('button[onclick="setTemperature()"]');
+            
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="loading"></span> Đang gửi...';
+            }
+            
+            try {
+                const response = await fetch('/api/temperature', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ temperature: targetTemp })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    let msg = 'Đã cài đặt ' + targetTemp + '°C';
+                    if (data.current_temp !== undefined) {
+                        msg += ' (hiện tại: ' + data.current_temp + '°C)';
+                    }
+                    showToast(msg, 'success');
+                } else {
+                    throw new Error(data.message || data.error || 'Lỗi không xác định');
+                }
+            } catch (err) {
+                console.error('Set temperature error:', err);
+                showToast('Không thể cài đặt nhiệt độ: ' + err.message, 'error');
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = 'Cập nhật nhiệt độ';
+                }
+            }
+        }
+
+        // Handle drag and drop
+        const uploadArea = document.getElementById('uploadArea');
+        
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+        
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+        
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            
+            const file = e.dataTransfer.files[0];
+            if (file && file.type.startsWith('image/')) {
+                loadImage(file);
+            }
+        });
+
+        // Handle image upload
+        function handleImageUpload(event) {
+            const file = event.target.files[0];
+            if (file) {
+                loadImage(file);
+            }
+        }
+
+        // Load and display image
+        function loadImage(file) {
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    currentImage = img;
+                    displayImage(img);
+                    document.getElementById('analyzeBtn').disabled = false;
+                };
+                img.src = e.target.result;
+            };
+            
+            reader.readAsDataURL(file);
+        }
+
+        // Display image on canvas
+        function displayImage(img) {
+            const canvas = document.getElementById('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Set canvas size
+            const maxWidth = 800;
+            const maxHeight = 600;
+            let width = img.width;
+            let height = img.height;
+            
+            if (width > maxWidth) {
+                height = (height * maxWidth) / width;
+                width = maxWidth;
+            }
+            if (height > maxHeight) {
+                width = (width * maxHeight) / height;
+                height = maxHeight;
+            }
+            
+            canvas.width = width;
+            canvas.height = height;
+            
+            // Draw image
+            ctx.drawImage(img, 0, 0, width, height);
+            
+            // Show canvas
+            document.getElementById('cameraContainer').style.display = 'block';
+        }
+
+
+async function analyzeImage() {
+            if (!currentImage) return;
+            
+            const btn = document.getElementById('analyzeBtn');
+            btn.innerHTML = '<span class="loading"></span> Đang phân tích với YOLO...';
+            btn.disabled = true;
+            
+            try {
+                // Get the canvas and convert to blob
+                const canvas = document.getElementById('canvas');
+                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.95));
+                
+                // Create FormData
+                const formData = new FormData();
+                formData.append('image', blob, 'image.jpg');
+                
+                // Call Flask API
+                const response = await fetch('/api/detect', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`API Error: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    detectedObjects = data.detections;
+                    displayDetectionResults();
+                    drawBoundingBoxes();
+                    updateInventoryStats();
+                    console.log('✓ YOLO Detection successful:', data);
+                } else {
+                    throw new Error(data.message || 'Detection failed');
+                }
+                
+            } catch (error) {
+                console.error('YOLO Detection Error:', error);
+                alert(`Lỗi: ${error.message}\n\nĐảm bảo Flask server đang chạy!`);
+                
+                // Fallback to simulation
+                detectedObjects = simulateYOLODetection();
+                displayDetectionResults();
+                drawBoundingBoxes();
+                updateInventoryStats();
+            } finally {
+                btn.innerHTML = '🤖 Phân Tích Bằng AI';
+                btn.disabled = false;
+            }
+        }
+
+        // Simulate YOLO detection (in real implementation, this would call actual YOLO model)
+        function simulateYOLODetection() {
+            const fruitTypes = ['Apple', 'Banana', 'Orange', 'Grape', 'Watermelon', 'Strawberry'];
+            const foodTypes = ['Milk', 'Cheese', 'Egg', 'Bread', 'Meat', 'Fish', 'Vegetables'];
+            const allTypes = [...fruitTypes, ...foodTypes];
+            
+            const numObjects = Math.floor(Math.random() * 8) + 3; // 3-10 objects
+            const objects = [];
+            
+            const canvas = document.getElementById('canvas');
+            
+            for (let i = 0; i < numObjects; i++) {
+                const type = allTypes[Math.floor(Math.random() * allTypes.length)];
+                const isFruit = fruitTypes.includes(type);
+                
+                objects.push({
+                    class: type,
+                    confidence: (0.75 + Math.random() * 0.24).toFixed(2),
+                    category: isFruit ? 'fruit' : 'food',
+                    bbox: {
+                        x: Math.random() * (canvas.width - 100),
+                        y: Math.random() * (canvas.height - 100),
+                        width: 50 + Math.random() * 100,
+                        height: 50 + Math.random() * 100
+                    }
+                });
+            }
+            
+            return objects;
+        }
+
+// Draw bounding boxes on canvas
+function drawBoundingBoxes() {
+            const canvas = document.getElementById('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Redraw image first
+            ctx.drawImage(currentImage, 0, 0, canvas.width, canvas.height);
+            
+            function getRipenessColor(obj) {
+                const ripenessRaw = (obj.ripeness_status || '').toString().trim().toUpperCase();
+                const isRotten = !!obj.is_rotten || ripenessRaw === 'HONG' || /H[ỎO]NG/i.test(obj.class || '');
+                if (isRotten) return '#dc2626'; // red
+                if (ripenessRaw === 'CHIN') return '#facc15'; // yellow
+                if (ripenessRaw === 'QUA CHIN' || ripenessRaw === 'QUACHIN' || ripenessRaw === 'QUA_CHIN') return '#fb923c'; // orange
+                if (ripenessRaw === 'SONG' || ripenessRaw === 'UONG') return '#22c55e'; // green
+
+                // fallback theo category nếu không có ripeness_status
+                if (obj.category === 'food') return '#0ea5e9'; // blue-ish for food
+                if (obj.category === 'item') return '#f59e0b'; // amber for items
+                if (obj.category === 'fruit') return '#22c55e'; // fruit default green
+                return '#6b7280'; // gray
+            }
+
+            function getLabelText(obj) {
+                const confidence = typeof obj.confidence === 'number'
+                    ? (obj.confidence * 100).toFixed(0)
+                    : (parseFloat(obj.confidence || 0) * 100).toFixed(0);
+                const ripenessRaw = (obj.ripeness_status || '').toString().trim();
+                if (ripenessRaw) {
+                    const base = (obj.class || '').split('(')[0].split(':')[0].trim();
+                    return `${base} - ${ripenessRaw.toUpperCase()} (${confidence}%)`;
+                }
+                return `${obj.class || 'Unknown'} ${confidence}%`;
+            }
+
+            // Draw boxes
+            detectedObjects.forEach((obj, index) => {
+                const color = getRipenessColor(obj);
+                
+                const bbox = obj.bbox;
+                
+                // Draw rectangle
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 3;
+                ctx.strokeRect(bbox.x, bbox.y, bbox.width, bbox.height);
+                
+                // Prepare label
+                const label = getLabelText(obj);
+                
+                // Measure text width
+                ctx.font = 'bold 14px Arial';
+                const textWidth = ctx.measureText(label).width;
+                
+                // Draw label background
+                ctx.fillStyle = color;
+                ctx.fillRect(bbox.x, bbox.y - 25, textWidth + 10, 25);
+                
+                // Draw label text
+                ctx.fillStyle = '#111827';
+                ctx.fillText(label, bbox.x + 5, bbox.y - 7);
+            });
+        }
+
+        // Display detection results
+        function displayDetectionResults(filter = 'all') {
+            const resultsDiv = document.getElementById('detectionResults');
+            const listDiv = document.getElementById('detectionList');
+
+            let filtered = detectedObjects;
+            if (filter === 'fruit' || filter === 'food' || filter === 'other') {
+                filtered = detectedObjects.filter(o => o.category === filter);
+            }
+
+            if (!filtered.length) {
+                listDiv.innerHTML = '<div style="padding: 10px; font-size: 0.9em; color: #6b7280;">Không có đối tượng nào phù hợp bộ lọc.</div>';
+                resultsDiv.style.display = 'block';
+                return;
+            }
+
+            function getRipenessMeta(obj) {
+                const ripenessRaw = (obj.ripeness_status || '-').toString().trim();
+                const ripenessUpper = ripenessRaw === '-' ? '-' : ripenessRaw.toUpperCase();
+                const isRotten = !!obj.is_rotten || ripenessUpper === 'HONG' || /H[ỎO]NG/i.test(obj.class || '');
+                const isRipe = ripenessUpper === 'CHIN' || ripenessUpper === 'QUA CHIN' || ripenessUpper === 'QUACHIN' || ripenessUpper === 'QUA_CHIN';
+                const isUnripe = ripenessUpper === 'SONG' || ripenessUpper === 'UONG';
+
+                let accent = '#e5e7eb';
+                let rowBg = 'white';
+                let textColor = '#374151';
+                if (isRotten) {
+                    accent = '#dc2626';
+                    rowBg = 'rgba(248, 113, 113, 0.14)';
+                    textColor = '#b91c1c';
+                } else if (isRipe) {
+                    accent = ripenessUpper.startsWith('QUA') ? '#fb923c' : '#facc15';
+                    rowBg = ripenessUpper.startsWith('QUA') ? 'rgba(251, 146, 60, 0.14)' : 'rgba(250, 204, 21, 0.18)';
+                    textColor = '#92400e';
+                } else if (isUnripe) {
+                    accent = '#22c55e';
+                    rowBg = 'rgba(34, 197, 94, 0.12)';
+                    textColor = '#065f46';
+                }
+                return { ripenessUpper, isRotten, accent, rowBg, textColor };
+            }
+
+            const rows = filtered.map(obj => {
+                const categoryLabel = obj.category === 'fruit'
+                    ? 'Trái cây'
+                    : obj.category === 'food'
+                        ? 'Thực phẩm'
+                        : 'Khác';
+
+                const badgeColor =
+                    obj.category === 'fruit' ? '#16a34a' :
+                    obj.category === 'food' ? '#0ea5e9' :
+                    '#6b7280';
+
+                const confidence =
+                    typeof obj.confidence === 'number'
+                        ? (obj.confidence * 100).toFixed(0)
+                        : (parseFloat(obj.confidence || 0) * 100).toFixed(0);
+
+                const meta = getRipenessMeta(obj);
+                const ripeness = meta.ripenessUpper;
+                const daysLeft = obj.days_left || '-';
+                const rowBg = meta.rowBg;
+                const borderColor = meta.accent;
+
+                return `
+                    <div style="
+                        display: grid;
+                        grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) 0.8fr 0.9fr 1fr;
+                        gap: 6px 10px;
+                        align-items: center;
+                        padding: 8px 10px;
+                        background: ${rowBg};
+                        border-radius: 6px;
+                        border: 1px solid ${borderColor};
+                        box-shadow: inset 0 0 0 1px rgba(0,0,0,0.02);
+                        font-size: 0.9em;
+                    ">
+                        <div style="font-weight: 500; color: #111827;">${obj.class}</div>
+                        <div>
+                            <span style="
+                                display: inline-block;
+                                padding: 2px 8px;
+                                border-radius: 999px;
+                                font-size: 0.8em;
+                                font-weight: 500;
+                                color: white;
+                                background: ${badgeColor};
+                            ">
+                                ${categoryLabel}
+                            </span>
+                        </div>
+                        <div style="color: #374151;">${confidence}%</div>
+                        <div style="color: ${meta.textColor}; font-weight: 600;">${ripeness}</div>
+                        <div style="color: #374151;">${daysLeft}</div>
+                    </div>
+                `;
+            }).join('');
+
+            const header = `
+                <div style="
+                    display: grid;
+                    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) 0.8fr 0.9fr 1fr;
+                    gap: 6px 10px;
+                    padding: 6px 10px;
+                    margin-bottom: 6px;
+                    border-bottom: 1px solid #cbd5f5;
+                    font-size: 0.8em;
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                    color: #6b7280;
+                ">
+                    <div>Đối tượng</div>
+                    <div>Loại</div>
+                    <div>Độ tin cậy</div>
+                    <div>Trạng thái</div>
+                    <div>Hạn sử dụng dự kiến</div>
+                </div>
+            `;
+
+            listDiv.innerHTML = header + rows;
+            resultsDiv.style.display = 'block';
+        }
+
+        // Update inventory statistics
+        function updateInventoryStats() {
+            const fruitCount = detectedObjects.filter(obj => obj.category === 'fruit').length;
+            const foodCount = detectedObjects.filter(obj => obj.category === 'food').length;
+            const totalItems = detectedObjects.length;
+            
+            document.getElementById('totalItems').textContent = totalItems;
+            document.getElementById('fruitCount').textContent = fruitCount;
+            document.getElementById('foodCount').textContent = foodCount;
+            document.getElementById('otherCount').textContent = Math.max(0, totalItems - fruitCount - foodCount);
+            
+            // Update OLED
+            document.getElementById('oledItems').textContent = totalItems;
+            document.getElementById('oledFruits').textContent = fruitCount;
+        }
+
+        // ===== Realtime inventory tổng hợp (camera live + ảnh upload) =====
+        async function fetchLiveInventoryOnce() {
+            try {
+                const res = await fetch('/api/inventory');
+                if (!res.ok) return;
+                const data = await res.json();
+
+                const total = data.total_items ?? 0;
+                const fruits = data.fruit_count ?? 0;
+                const foods = data.food_count ?? 0;
+                const others = data.other_count ?? 0;
+
+                document.getElementById('totalItems').textContent = total;
+                document.getElementById('fruitCount').textContent = fruits;
+                document.getElementById('foodCount').textContent = foods;
+                document.getElementById('otherCount').textContent = others;
+
+                // Cập nhật OLED
+                document.getElementById('oledItems').textContent = total;
+                document.getElementById('oledFruits').textContent = fruits;
+            } catch (e) {
+                // Im lặng, tránh spam lỗi giao diện
+                console.warn('Fetch live inventory failed:', e);
+            }
+        }
+
+        // Clear image
+        function clearImage() {
+            currentImage = null;
+            detectedObjects = [];
+            
+            document.getElementById('cameraContainer').style.display = 'none';
+            document.getElementById('detectionResults').style.display = 'none';
+            document.getElementById('fileInput').value = '';
+            document.getElementById('analyzeBtn').disabled = true;
+            
+            // Reset stats trên UI
+            updateInventoryStats();
+
+            // Yêu cầu backend đưa inventory về 0 để polling /api/inventory trả về 0
+            fetch('/api/inventory/reset', { method: 'POST' }).catch(() => {});
+        }
+
+// Initialize
+// Sử dụng SSE cho real-time updates, fallback về polling nếu không hỗ trợ
+startSensorStream();
+        setInterval(updateOLEDTime, 1000);
+        updateSensorData(); // Initial load
+        updateOLEDTime();
+        // Bật polling inventory 1 cách định kỳ để panel thống kê luôn bám theo kết quả mới nhất
+        fetchLiveInventoryOnce();
+        setInterval(fetchLiveInventoryOnce, 800);
+        
+        function setSystemStatus(idPrefix, state, textIfAny) {
+            const dot = document.getElementById(idPrefix + 'Dot');
+            const textEl = document.getElementById(idPrefix + 'Text');
+            if (!dot || !textEl) return;
+
+            dot.classList.remove('status-dot--ok', 'status-dot--warn', 'status-dot--error', 'status-dot--off', 'status-dot--unknown');
+            if (state === 'ok') dot.classList.add('status-dot--ok');
+            else if (state === 'warn') dot.classList.add('status-dot--warn');
+            else if (state === 'error') dot.classList.add('status-dot--error');
+            else if (state === 'off') dot.classList.add('status-dot--off');
+            else dot.classList.add('status-dot--unknown');
+
+            if (textIfAny) {
+                textEl.textContent = textIfAny;
+            }
+        }
+
+        // Check API connection on load
+        async function checkAPIConnection() {
+            try {
+                const response = await fetch('/api/sensors');
+                if (response.ok) {
+                    console.log('✓ Connected to Flask API');
+                    document.getElementById('detectionMode').innerHTML = 
+                        '<span class="status-indicator status-online"></span>Sử dụng YOLO thật qua API';
+                    setSystemStatus('statusApi', 'ok', 'Hoạt động');
+                } else {
+                    throw new Error('API not responding');
+                }
+            } catch (error) {
+                console.warn('API connection failed');
+                document.getElementById('detectionMode').innerHTML = 
+                    '<span class="status-indicator status-offline"></span>Mode giả lập (API không khả dụng)';
+                setSystemStatus('statusApi', 'error', 'Không kết nối được');
+            }
+        }
+        
+        checkAPIConnection();
+
+        // Load control mode after page loads
+        loadControlMode();
+
+        // Parse API response safely (server may return HTML on 500 error)
+        async function parseJsonResponse(res) {
+            const text = await res.text();
+            if (!res.ok) {
+                try {
+                    const data = JSON.parse(text);
+                    throw new Error(data.message || data.error || `HTTP ${res.status}`);
+                } catch (e) {
+                    if (e instanceof SyntaxError || text.trim().startsWith('<')) {
+                        throw new Error(`Lỗi máy chủ (HTTP ${res.status}). Kiểm tra console server.`);
+                    }
+                    throw e;
+                }
+            }
+            try {
+                return text ? JSON.parse(text) : {};
+            } catch (e) {
+                throw new Error('Phản hồi không hợp lệ từ máy chủ.');
+            }
+        }
+
+        // Live Camera Functions
+        function startLiveCamera(source) {
+            if (liveCameraActive) {
+                stopLiveCamera();
+                return;
+            }
+            
+            const sourceName = source === 'webcam' ? 'Webcam' : 'ESP32-CAM';
+            console.log(`Starting ${sourceName}...`);
+            
+            // Show loading state
+            document.getElementById('liveCameraContainer').style.display = 'block';
+            document.getElementById('cameraLoading').style.display = 'block';
+            document.getElementById('liveCameraFeed').style.display = 'none';
+            document.getElementById('uploadArea').style.display = 'none';
+            document.getElementById('startWebcamBtn').style.display = 'none';
+            document.getElementById('startESP32Btn').style.display = 'none';
+            document.getElementById('stopCameraBtn').style.display = 'block';
+            
+            // Set camera source FIRST
+            fetch('/api/camera/source', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ source: source })
+            })
+                .then(res => parseJsonResponse(res))
+                .then(sourceData => {
+                    console.log(`✓ Camera source set to: ${source}`);
+                    
+                    // Start camera on server
+                    return fetch('/api/camera/start', { method: 'POST' });
+                })
+                .then(res => parseJsonResponse(res))
+                .then(data => {
+                    if (!data.success) {
+                        throw new Error(data.message || 'Camera not available');
+                    }
+                    
+                    console.log('✓ Camera server started:', data);
+                    
+                    liveCameraActive = true;
+                    liveCameraMode = source;
+                    
+                    // Update status
+                    const statusText = source === 'webcam' 
+                        ? 'Đang phát trực tiếp từ Webcam với AI Detection...'
+                        : 'Đang phát trực tiếp từ ESP32-CAM với AI Detection...';
+                    document.getElementById('cameraStatus').innerHTML = statusText;
+                    
+                    // Start camera stream with detection
+                    const feed = document.getElementById('liveCameraFeed');
+                    const streamUrl = '/api/camera/stream/detect?' + new Date().getTime();
+                    console.log(`Starting stream from ${source}:`, streamUrl);
+                    
+                    feed.onload = function() {
+                        console.log(`✓ Camera feed loaded from ${source}`);
+                        document.getElementById('cameraLoading').style.display = 'none';
+                        document.getElementById('liveCameraFeed').style.display = 'block';
+                    };
+                    
+                    feed.onerror = function() {
+                        console.error(`Camera feed error from ${source}`);
+                        if (liveCameraActive) {
+                            const errorMsg = source === 'webcam'
+                                ? '<div style="color: #ff6b6b;">❌ Lỗi kết nối Webcam</div>'
+                                : '<div style="color: #ff6b6b;">❌ Lỗi kết nối ESP32-CAM</div>';
+                            document.getElementById('cameraLoading').innerHTML = errorMsg;
+                        }
+                    };
+                    
+                    feed.src = streamUrl;
+                })
+                .catch(err => {
+                    console.error('Camera start error:', err);
+                    document.getElementById('liveCameraContainer').style.display = 'none';
+                    document.getElementById('uploadArea').style.display = 'block';
+                    document.getElementById('startWebcamBtn').style.display = 'block';
+                    document.getElementById('startESP32Btn').style.display = 'block';
+                    document.getElementById('stopCameraBtn').style.display = 'none';
+                    
+                    const errorMsg = source === 'webcam'
+                        ? 'Không thể khởi động Webcam:\n' + err.message + '\n\nKiểm tra:\n- Webcam đã kết nối\n- Đã cấp quyền truy cập camera\n- Không có app khác đang dùng camera'
+                        : 'Không thể khởi động ESP32-CAM:\n' + err.message + '\n\nKiểm tra:\n- ESP32-CAM đã kết nối WiFi\n- IP address đúng (192.168.137.14)\n- ESP32-CAM đang chạy';
+                    alert(errorMsg);
+                });
+        }
+
+        function stopLiveCamera() {
+            liveCameraActive = false;
+            liveCameraMode = null;
+            
+            // Hide live feed
+            document.getElementById('liveCameraContainer').style.display = 'none';
+            document.getElementById('uploadArea').style.display = 'block';
+            document.getElementById('startWebcamBtn').style.display = 'block';
+            document.getElementById('startESP32Btn').style.display = 'block';
+            document.getElementById('stopCameraBtn').style.display = 'none';
+            
+            // Stop camera stream
+            const feed = document.getElementById('liveCameraFeed');
+            feed.src = '';
+            
+            // Stop camera on server
+            fetch('/api/camera/stop', { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                if (data.success) {
+                        console.log('✓ Camera stopped');
+                    }
+                })
+                .catch(err => {
+                    console.error('Camera stop error:', err);
+                });
+        }
+
+        // Handle camera feed errors - only show alert when actually streaming
+        document.getElementById('liveCameraFeed').addEventListener('error', function() {
+            console.error('Camera feed error');
+            // Only show alert if we're actually trying to stream
+            if (liveCameraActive) {
+                alert('Lỗi kết nối camera. Vui lòng kiểm tra camera đã kết nối và được cấp quyền truy cập.');
+                stopLiveCamera();
+            }
+        });
+
+        // Check camera status on load - silent check, no alerts
+        async function checkCameraStatus() {
+            try {
+                const response = await fetch('/api/camera/status');
+                if (!response.ok) {
+                    throw new Error('Status check failed');
+                }
+                const data = await response.json();
+                
+                if (!data.available) {
+                    document.getElementById('detectionMode').innerHTML = 
+                        '<span class="status-indicator status-offline"></span>Camera không khả dụng (click để thử bật)';
+                    setSystemStatus('statusCamera', 'off', 'Không khả dụng');
+                } else {
+                    document.getElementById('detectionMode').innerHTML = 
+                        '<span class="status-indicator status-online"></span>Camera sẵn sàng';
+                    setSystemStatus('statusCamera', 'ok', 'Sẵn sàng');
+                }
+            } catch (error) {
+                // Silent fail - don't show alert, just update status
+                console.warn('Could not check camera status:', error);
+                document.getElementById('detectionMode').innerHTML = 
+                    '<span class="status-indicator status-offline"></span>Chưa kiểm tra camera';
+                setSystemStatus('statusCamera', 'unknown', 'Chưa kiểm tra');
+            }
+        }
+        
+        // Check camera status after page loads (delay a bit to avoid blocking)
+        setTimeout(checkCameraStatus, 500);
+
+        // ===== Chatbot UI =====
+        const chatSessionId = (() => {
+            const key = 'smartFridgeChatSessionId';
+            let v = localStorage.getItem(key);
+            if (!v) {
+                v = 'sess_' + Math.random().toString(16).slice(2) + '_' + Date.now();
+                localStorage.setItem(key, v);
+            }
+            return v;
+        })();
+
+        function appendChat(role, text) {
+            const box = document.getElementById('chatMessages');
+            if (!box) return;
+            const row = document.createElement('div');
+            row.className = 'chat-row ' + (role === 'user' ? 'user' : 'assistant');
+            
+            if (role === 'typing') {
+                row.id = 'chatTypingIndicator';
+                row.innerHTML = `<div class="typing-indicator">
+                    <div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>
+                </div>`;
+            } else {
+                const bubble = document.createElement('div');
+                bubble.className = 'chat-bubble ' + (role === 'user' ? 'user' : 'assistant');
+                bubble.innerHTML = text.replace(/\n/g, '<br>');
+                row.appendChild(bubble);
+            }
+            
+            box.appendChild(row);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        function removeTypingIndicator() {
+            const typing = document.getElementById('chatTypingIndicator');
+            if (typing) typing.remove();
+        }
+
+        async function sendChat() {
+            const input = document.getElementById('chatInput');
+            const btn = document.getElementById('chatSendBtn');
+            if (!input || !btn) return;
+            const msg = (input.value || '').trim();
+            if (!msg) return;
+            input.value = '';
+            appendChat('user', msg);
+            btn.disabled = true;
+            btn.style.opacity = '0.5';
+            const old = btn.innerHTML;
+            
+            appendChat('typing', '');
+
+            try {
+                const res = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: chatSessionId, message: msg })
+                });
+                const data = await parseJsonResponse(res);
+                
+                removeTypingIndicator(); // Xóa 3 chấm
+                
+                if (data && data.success) {
+                    appendChat('assistant', data.reply || 'OK');
+                } else {
+                    throw new Error(data.error || 'Chat failed');
+                }
+            } catch (e) {
+                removeTypingIndicator(); // Xóa 3 chấm khi lỗi
+                appendChat('assistant', 'Lỗi chatbot: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.style.opacity = '1';
+                btn.innerHTML = old;
+                setTimeout(() => input.focus(), 50);
+            }
+        }
+
+        const chatBtn = document.getElementById('chatSendBtn');
+        const chatInput = document.getElementById('chatInput');
+        if (chatBtn) chatBtn.addEventListener('click', sendChat);
+        if (chatInput) chatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') sendChat();
+        });
+
+        // Toggle chat panel
+        const chatPanel = document.getElementById('chatPanel');
+        const chatFab = document.getElementById('chatFab');
+        const chatCloseBtn = document.getElementById('chatCloseBtn');
+
+        function openChat() {
+            if (!chatPanel) return;
+            chatPanel.style.display = 'flex';
+            const input = document.getElementById('chatInput');
+            if (input) {
+                setTimeout(() => input.focus(), 50);
+            }
+            if (!chatPanel.dataset.initialized) {
+                appendChat('assistant', 'Chào bạn! Bạn có thể hỏi: "Trong tủ có gì?", "Trái cây có bị hỏng không?", hoặc "Đặt nhiệt độ 4°C".');
+                chatPanel.dataset.initialized = '1';
+            }
+        }
+
+        function closeChat() {
+            if (!chatPanel) return;
+            chatPanel.style.display = 'none';
+        }
+
+        if (chatFab) chatFab.addEventListener('click', () => {
+            if (chatPanel && chatPanel.style.display === 'flex') {
+                closeChat();
+            } else {
+                openChat();
+            }
+        });
+        if (chatCloseBtn) chatCloseBtn.addEventListener('click', closeChat);
+    </script>
+    <script>
+        // ===== AUTH CHECK & USER INFO =====
+        (async function() {
+            try {
+                const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
+                if (!res.ok) {
+                    window.location.href = '/login';
+                    return;
+                }
+                const data = await res.json();
+                if (!data.success) {
+                    window.location.href = '/login';
+                    return;
+                }
+                const user = data.user;
+                const fullName = user.full_name || user.username || 'User';
+                const initials = fullName.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+                const isAdmin = user.role === 'admin';
+                const roleLabel = isAdmin ? 'Quản trị viên' : 'Người dùng';
+
+                document.getElementById('headerUsername').textContent = fullName;
+                document.getElementById('headerRole').textContent = roleLabel;
+                document.getElementById('headerAvatar').textContent = initials;
+
+                // === PHÂN QUYỀN: user chỉ xem, không điều chỉnh nhiệt độ ===
+                if (!isAdmin) {
+                    const slider = document.getElementById('tempSlider');
+                    const btnTemp = document.getElementById('btnSetTemp');
+                    const notice = document.getElementById('tempReadonlyNotice');
+                    if (slider) {
+                        slider.disabled = true;
+                        slider.style.opacity = '0.45';
+                        slider.style.cursor = 'not-allowed';
+                        slider.style.pointerEvents = 'none';
+                    }
+                    if (btnTemp) {
+                        btnTemp.disabled = true;
+                        btnTemp.style.display = 'none';
+                    }
+                    if (notice) notice.style.display = 'block';
+                }
+            } catch (err) {
+                window.location.href = '/login';
+            }
+        })();
+
+        async function handleLogout() {
+            try {
+                await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+            } catch(e) {}
+            window.location.href = '/login';
+        }
+    </script>
+</body>
+</html>
