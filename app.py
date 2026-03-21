@@ -112,7 +112,7 @@ def _tool_set_temperature(target_temp: float):
     pwm_sent = None
     firebase_error = None
 
-    if mode == 'software' and FIREBASE_AVAILABLE:
+    if mode in ['software', 'hardware'] and FIREBASE_AVAILABLE:
         try:
             fb_data = get_latest_sensor_data()
             if fb_data and fb_data.get('temperature') is not None:
@@ -1098,10 +1098,10 @@ def get_sensors():
         try:
             fb_data = get_latest_sensor_data()
             if fb_data:
-                sensor_data['temperature'] = fb_data.get('temperature', sensor_data['temperature'])
-                sensor_data['humidity'] = fb_data.get('humidity', sensor_data['humidity'])
-                sensor_data['door_state'] = fb_data.get('door', 0)
-                sensor_data['pwm'] = fb_data.get('pwm', 0)
+                sensor_data['temperature'] = fb_data.get('Temp', sensor_data['temperature'])
+                sensor_data['humidity'] = fb_data.get('Humi', sensor_data['humidity'])
+                sensor_data['door_state'] = fb_data.get('Door', 0)
+                sensor_data['pwm'] = fb_data.get('PWM', 0)
                 sensor_data['last_update'] = fb_data.get('last_update', datetime.now().isoformat())
                 sensor_data['source'] = 'firebase_wokwi'
                 
@@ -1170,8 +1170,8 @@ def set_temperature():
     if FIREBASE_AVAILABLE:
         try:
             fb_data = get_latest_sensor_data()
-            if fb_data and fb_data.get('temperature') is not None:
-                current_temp = float(fb_data.get('temperature', target_temp))
+            if fb_data and fb_data.get('Temp') is not None:
+                current_temp = float(fb_data.get('Temp', target_temp))
                 sensor_data['temperature'] = current_temp
         except Exception as e:
             print(f"⚠ Could not fetch current temp from Firebase: {e}")
@@ -1189,7 +1189,7 @@ def set_temperature():
     # Gửi lệnh PWM tới Firebase (Wokwi ESP32) - ESP32 đọc /Control/Peltier (software mode)
     pwm_sent = None
     firebase_error = None
-    if mode == 'software' and FIREBASE_AVAILABLE:
+    if mode in ['software', 'hardware'] and FIREBASE_AVAILABLE:
         try:
             # Chuyển đổi target temp -> PWM: nhiệt độ cao hơn mục tiêu = cần làm lạnh = PWM cao
             diff = current_temp - target_temp
@@ -1951,16 +1951,17 @@ def get_control_status():
         return jsonify({'error': str(e)}), 500
 
 def firebase_update_worker():
-    """Background thread để check Firebase liên tục và update cache"""
+    """Background thread để check Firebase liên tục và update cache (Real-time tối đa)"""
     global firebase_latest_data, firebase_update_running
     
     if not FIREBASE_AVAILABLE:
         return
     
     firebase_update_running = True
-    last_timestamp = None
+    last_state = None
+    last_push_time = 0
     
-    print("🔄 Firebase update worker started")
+    print("🔄 Firebase update worker started (High-Speed Mode)")
     
     while firebase_update_running:
         try:
@@ -1968,27 +1969,33 @@ def firebase_update_worker():
             fb_data = get_latest_sensor_data()
             
             if fb_data:
-                current_timestamp = fb_data.get('timestamp', '')
+                temp = fb_data.get('temperature', 0)
+                humi = fb_data.get('humidity', 0)
+                door = fb_data.get('door', 0)
+                pwm  = fb_data.get('pwm', 0)
                 
-                # Chỉ update nếu có dữ liệu mới
-                if current_timestamp and current_timestamp != last_timestamp:
+                current_state = f"{temp}_{humi}_{door}_{pwm}"
+                current_time = time.time()
+                
+                if current_state != last_state or (current_time - last_push_time) > 1.5:
                     firebase_latest_data = {
-                        'temperature': round(fb_data.get('temperature', 0), 1),
-                        'humidity': int(fb_data.get('humidity', 0)),
-                        'door_state': fb_data.get('door', 0),
-                        'pwm': fb_data.get('pwm', 0),
-                        'source': 'firebase_wokwi',
-                        'timestamp': current_timestamp,
-                        'last_update': fb_data.get('last_update', datetime.now().isoformat())
+                        'temperature': round(float(temp), 1),
+                        'humidity': int(humi),
+                        'door_state': int(door),
+                        'pwm': int(pwm),
+                        'source': 'firebase',
+                        'timestamp': datetime.now().isoformat()
                     }
-                    last_timestamp = current_timestamp
-                    # Put vào queue để SSE stream biết có dữ liệu mới
+                    
+                    last_state = current_state
+                    last_push_time = current_time
+                    
                     try:
                         firebase_update_queue.put_nowait(firebase_latest_data)
                     except:
-                        pass  # Queue full, skip
+                        pass
             
-            # Check mỗi 0.2 giây để realtime hơn (ESP32 push /Current mỗi 2s)
+            # Giảm độ trễ để bắt kịp Firebase
             time.sleep(0.2)
             
         except Exception as e:
