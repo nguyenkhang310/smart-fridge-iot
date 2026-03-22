@@ -314,11 +314,15 @@ app.run(debug=True, use_reloader=False, host='0.0.0.0', port=5001)
 
 ### Trang đăng nhập
 
+<img src="static/img/login.png" alt="Giao diện đăng nhập" width="700">
+
 - Truy cập `http://localhost:5001/login`
 - Đăng nhập với tài khoản admin/user
 - Admin đầu tiên được tạo từ `BOOTSTRAP_ADMIN_USERNAME` và `BOOTSTRAP_ADMIN_PASSWORD` khi DB trống
 
 ### Dashboard chính
+
+<img src="static/img/dashboard.png" alt="Giao diện dashboard" width="700">
 
 - **System Status Bar**: Trạng thái API, Firebase, DB, Camera
 - **Cards cảm biến**: Nhiệt độ, độ ẩm, thanh tiến độ, slider điều chỉnh nhiệt độ
