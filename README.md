@@ -1,8 +1,8 @@
 <div align="center">
 
-![Logo Trường Đại Học Công Nghệ Kỹ Thuật TP.HCM](static/img/logo-hcm-ute.png)
+<img src="static/img/logo-hcm-ute.png" alt="Logo HCM-UTE" width="120">
 
-# 🧊 Hệ thống Tủ lạnh Thông minh IoT với AI
+# Hệ thống Tủ lạnh Thông minh IoT với AI
 
 ![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)
 ![Flask](https://img.shields.io/badge/Flask-3.0.0-green.svg)
@@ -11,32 +11,32 @@
 
 **Hệ thống tủ lạnh IoT thông minh với AI nhận diện trái cây, giám sát nhiệt độ/độ ẩm thời gian thực, điều khiển qua Firebase/Wokwi**
 
-[Giới thiệu](#-giới-thiệu-dự-án) • [Tính năng](#-tính-năng) • [Cài đặt](#-cài-đặt) • [Cấu hình](#-cấu-hình) • [API](#-api-endpoints) • [Kiến trúc](#-kiến-trúc-hệ-thống) • [Tài liệu](#-tài-liệu)
+[Giới thiệu](#giới-thiệu-dự-án) • [Tính năng](#tính-năng) • [Cài đặt](#cài-đặt) • [Cấu hình](#cấu-hình) • [API](#api-endpoints) • [Kiến trúc](#kiến-trúc-hệ-thống) • [Tài liệu](#tài-liệu)
 
 </div>
 
 ---
 
-## 📋 Mục lục
+## Mục lục
 
-- [Giới thiệu dự án](#-giới-thiệu-dự-án)
-- [Tính năng](#-tính-năng)
-- [Yêu cầu hệ thống](#-yêu-cầu-hệ-thống)
-- [Cài đặt](#-cài-đặt)
-- [Cấu hình](#-cấu-hình)
-- [Sử dụng](#-sử-dụng)
-- [API Endpoints](#-api-endpoints)
-- [Cơ sở dữ liệu](#-cơ-sở-dữ-liệu)
-- [Kiến trúc hệ thống](#-kiến-trúc-hệ-thống)
-- [Phần cứng IoT](#-phần-cứng-iot)
-- [Triển khai Production](#-triển-khai-production)
-- [Xử lý sự cố](#-xử-lý-sự-cố)
-- [Tài liệu](#-tài-liệu)
-- [Liên hệ](#-liên-hệ)
+- [Giới thiệu dự án](#giới-thiệu-dự-án)
+- [Tính năng](#tính-năng)
+- [Yêu cầu hệ thống](#yêu-cầu-hệ-thống)
+- [Cài đặt](#cài-đặt)
+- [Cấu hình](#cấu-hình)
+- [Sử dụng](#sử-dụng)
+- [API Endpoints](#api-endpoints)
+- [Cơ sở dữ liệu](#cơ-sở-dữ-liệu)
+- [Kiến trúc hệ thống](#kiến-trúc-hệ-thống)
+- [Phần cứng IoT](#phần-cứng-iot)
+- [Triển khai Production](#triển-khai-production)
+- [Xử lý sự cố](#xử-lý-sự-cố)
+- [Tài liệu](#tài-liệu)
+- [Liên hệ](#liên-hệ)
 
 ---
 
-## 📖 Giới thiệu dự án
+## Giới thiệu dự án
 
 **Hệ thống Tủ lạnh Thông minh IoT** là giải pháp toàn diện để quản lý tủ lạnh thông minh, tích hợp:
 
@@ -52,7 +52,7 @@ Dự án hướng tới triển khai thực tế (ESP32, cảm biến, camera) n
 
 ---
 
-## ✨ Tính năng
+## Tính năng
 
 ### Giám sát cảm biến
 
@@ -122,7 +122,7 @@ Hiển thị thông tin thời gian thực:
 
 ---
 
-## 🖥️ Yêu cầu hệ thống
+## Yêu cầu hệ thống
 
 | Thành phần | Yêu cầu |
 |------------|---------|
@@ -134,7 +134,7 @@ Hiển thị thông tin thời gian thực:
 
 ---
 
-## 🚀 Cài đặt
+## Cài đặt
 
 ### Cách 1: Cài đặt thủ công
 
@@ -199,7 +199,7 @@ docker-compose up -d
 
 ---
 
-## ⚙️ Cấu hình
+## Cấu hình
 
 ### Biến môi trường (`.env`)
 
@@ -310,7 +310,7 @@ app.run(debug=True, use_reloader=False, host='0.0.0.0', port=5001)
 
 ---
 
-## 📱 Sử dụng
+## Sử dụng
 
 ### Trang đăng nhập
 
@@ -341,7 +341,7 @@ app.run(debug=True, use_reloader=False, host='0.0.0.0', port=5001)
 
 ---
 
-## 📡 API Endpoints
+## API Endpoints
 
 ### Xác thực (Auth)
 
@@ -444,7 +444,7 @@ curl -X POST http://localhost:5001/api/detect \
 
 ---
 
-## 🗄️ Cơ sở dữ liệu
+## Cơ sở dữ liệu
 
 ### Schema MySQL
 
@@ -461,7 +461,7 @@ File schema đầy đủ: `data/schema.sql`
 
 ---
 
-## 🏗️ Kiến trúc hệ thống
+## Kiến trúc hệ thống
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -524,7 +524,7 @@ smart-fridge-iot/
 
 ---
 
-## 🔧 Phần cứng IoT
+## Phần cứng IoT
 
 ### Firebase / Wokwi (mô phỏng)
 
@@ -553,7 +553,7 @@ Chi tiết: `docs/HARDWARE_SETUP.md`, `core/raspberry_pi_config.py`
 
 ---
 
-## 🚀 Triển khai Production
+## Triển khai Production
 
 ### Gunicorn
 
@@ -582,7 +582,7 @@ docker run -p 5001:5001 smart-fridge
 
 ---
 
-## 🔍 Xử lý sự cố
+## Xử lý sự cố
 
 ### Lỗi: "Unexpected token '<', '<!doctype'... is not valid JSON"
 
@@ -639,7 +639,7 @@ Tắt process hoặc đổi port trong `app.py`.
 
 ---
 
-## 📚 Tài liệu
+## Tài liệu
 
 ### Tài liệu trong dự án
 
@@ -661,7 +661,7 @@ Tắt process hoặc đổi port trong `app.py`.
 
 ---
 
-## 📦 Dependencies chính
+## Dependencies chính
 
 | Package | Phiên bản | Mục đích |
 |---------|-----------|----------|
@@ -679,13 +679,13 @@ Tắt process hoặc đổi port trong `app.py`.
 
 ---
 
-## 📄 License
+## License
 
 MIT License – xem file `LICENSE` để biết chi tiết.
 
 ---
 
-## 👤 Liên hệ
+## Liên hệ
 
 | Thông tin | Giá trị |
 |-----------|---------|
