@@ -10,17 +10,39 @@ import requests
 cv2.setLogLevel(3)
 from ultralytics import YOLO
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 from PIL import Image
 import io
 import base64
 import torch
 import threading
+import secrets
+import hmac
+import re
 from queue import Queue
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24)) # Đổi sang urandom để mỗi lần chạy lại server là phải đăng nhập lại
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    value = (os.environ.get(name) or '').strip().lower()
+    if value in ('1', 'true', 'yes', 'on'):
+        return True
+    if value in ('0', 'false', 'no', 'off'):
+        return False
+    return default
+
+
+secret_key = os.environ.get('SECRET_KEY')
+if not secret_key:
+    print("⚠ SECRET_KEY is not set. Using runtime key (development only).")
+    secret_key = os.urandom(32)
+app.secret_key = secret_key
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax')
+app.config['SESSION_COOKIE_SECURE'] = _env_flag('SESSION_COOKIE_SECURE', False)
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=int(os.environ.get('SESSION_LIFETIME_HOURS', '12')))
 CORS(app, supports_credentials=True)
 # Configuration
 UPLOAD_FOLDER = 'uploads'
@@ -74,6 +96,13 @@ _load_control_mode()
 _chat_sessions = {}
 _chat_lock = threading.Lock()
 
+# Auth guard for brute-force attempts
+_login_attempts = {}
+_login_attempt_lock = threading.Lock()
+MAX_LOGIN_ATTEMPTS = int(os.environ.get('MAX_LOGIN_ATTEMPTS', '5'))
+LOGIN_ATTEMPT_WINDOW_SECONDS = int(os.environ.get('LOGIN_ATTEMPT_WINDOW_SECONDS', '900'))
+LOCKOUT_SECONDS = int(os.environ.get('LOCKOUT_SECONDS', '900'))
+
 def _get_session_history(session_id: str):
     with _chat_lock:
         return list(_chat_sessions.get(session_id, []))
@@ -95,6 +124,7 @@ def _tool_get_inventory():
     }
 
 def _tool_get_sensors():
+    _refresh_sensor_data()
     snap = dict(sensor_data)
     snap['mode'] = get_control_mode()
     snap['firebase_available'] = bool(FIREBASE_AVAILABLE)
@@ -408,8 +438,9 @@ except ImportError:
     print("⚠ hardware_integration.py not found - using simulation mode")
 
 # Initialize hardware if available
+_hardware_initialized = False
 if HARDWARE_AVAILABLE:
-    init_hardware()
+    _hardware_initialized = init_hardware()
 
 # Import database integration (optional)
 try:
@@ -418,7 +449,8 @@ try:
         save_inventory, get_latest_inventory, save_detection_session,
         save_detection, save_temperature_setting, get_statistics,
         create_user, get_user_by_username, get_user_by_id,
-        update_last_login, count_users, verify_password
+        update_last_login, count_users, verify_password,
+        list_users, set_user_active
     )
     DB_AVAILABLE = True
 except ImportError as e:
@@ -429,20 +461,19 @@ except ImportError as e:
 if DB_AVAILABLE:
     if init_database():
         print("✓ MySQL database initialized")
-        # Create default accounts if no users exist
+        # Bootstrap admin account one time if DB has no users
         try:
             if count_users() == 0:
-                create_user('admin', 'admin123', full_name='Administrator', role='admin')
-                create_user('user', 'user123', full_name='Người dùng', role='user')
-                print("✓ Default admin user created (admin / admin123)")
-                print("✓ Default user account created (user / user123)")
-            else:
-                # Ensure default user account exists
-                if not get_user_by_username('user'):
-                    create_user('user', 'user123', full_name='Người dùng', role='user')
-                    print("✓ Default user account created (user / user123)")
+                bootstrap_username = (os.environ.get('BOOTSTRAP_ADMIN_USERNAME') or 'admin').strip() or 'admin'
+                bootstrap_password = os.environ.get('BOOTSTRAP_ADMIN_PASSWORD')
+                if bootstrap_password:
+                    create_user(bootstrap_username, bootstrap_password, full_name='Administrator', role='admin')
+                    print(f"✓ Bootstrap admin account created ({bootstrap_username})")
+                else:
+                    print("⚠ No users found but BOOTSTRAP_ADMIN_PASSWORD is missing.")
+                    print("⚠ Set BOOTSTRAP_ADMIN_PASSWORD and restart once to create first admin account.")
         except Exception as _e:
-            print(f"⚠ Could not create default accounts: {_e}")
+            print(f"⚠ Could not bootstrap admin account: {_e}")
     else:
         print("⚠ Database initialization failed - continuing without database")
         DB_AVAILABLE = False
@@ -450,7 +481,7 @@ if DB_AVAILABLE:
 # Import Firebase integration (optional)
 try:
     from core.firebase_integration import (
-        init_firebase, get_latest_sensor_data, get_sensor_history as get_firebase_history,
+        init_firebase, get_latest_sensor_data, get_sensor_history as get_firebase_sensor_history,
         set_light_control, set_peltier_control, set_target_temperature as set_firebase_target_temp,
         get_control_status as get_firebase_control_status
     )
@@ -472,6 +503,111 @@ sensor_data = {
     'status': 'normal',
     'last_update': datetime.now().isoformat()
 }
+
+def _parse_firebase_sensor_payload(fb_data):
+    """Chuẩn hóa dict từ get_latest_sensor_data() (temperature/humidity/...) hoặc key gốc (Temp/Humi/...)."""
+    if not fb_data or not isinstance(fb_data, dict):
+        return None
+    t = fb_data.get('temperature')
+    if t is None:
+        t = fb_data.get('Temp')
+    h = fb_data.get('humidity')
+    if h is None:
+        h = fb_data.get('Humi')
+    door = fb_data.get('door')
+    if door is None:
+        door = fb_data.get('Door')
+    pwm = fb_data.get('pwm')
+    if pwm is None:
+        pwm = fb_data.get('PWM')
+    return {
+        'temperature': t,
+        'humidity': h,
+        'door': door,
+        'pwm': pwm,
+        'last_update': fb_data.get('last_update'),
+    }
+
+def _apply_firebase_to_sensor_data(fb_data):
+    """Đồng bộ sensor_data với Firebase — cùng nguồn với firebase_update_worker (SSE dashboard)."""
+    v = _parse_firebase_sensor_payload(fb_data)
+    if not v:
+        return
+    if v['temperature'] is not None:
+        try:
+            sensor_data['temperature'] = float(v['temperature'])
+        except (TypeError, ValueError):
+            pass
+    if v['humidity'] is not None:
+        try:
+            sensor_data['humidity'] = float(v['humidity'])
+        except (TypeError, ValueError):
+            pass
+    if v['door'] is not None:
+        try:
+            sensor_data['door_state'] = int(v['door'])
+        except (TypeError, ValueError):
+            pass
+    if v['pwm'] is not None:
+        try:
+            sensor_data['pwm'] = int(v['pwm'])
+        except (TypeError, ValueError):
+            pass
+    if v.get('last_update'):
+        sensor_data['last_update'] = v['last_update']
+
+def _refresh_sensor_data():
+    """
+    Cập nhật sensor_data từ nguồn đúng theo control mode.
+    - Chế độ phần cứng + có thiết bị thật: ưu tiên đọc từ hardware.
+    - Chế độ phần mềm (hoặc hardware stub): ưu tiên đọc từ Wokwi/Firebase.
+    """
+    mode = get_control_mode()
+
+    if mode == 'hardware' and _hardware_initialized:
+        try:
+            real_data = read_sensors()
+            sensor_data['temperature'] = real_data.get('temperature', sensor_data['temperature'])
+            sensor_data['humidity'] = real_data.get('humidity', sensor_data['humidity'])
+            sensor_data['status'] = real_data.get('status', sensor_data['status'])
+            sensor_data['last_update'] = real_data.get('last_update', datetime.now().isoformat())
+            sensor_data['door_state'] = real_data.get('door_state', 0)
+            sensor_data['pwm'] = real_data.get('pwm', 0)
+            sensor_data['source'] = 'hardware'
+        except Exception as e:
+            print(f"⚠ Error reading from hardware: {e}")
+            if FIREBASE_AVAILABLE:
+                try:
+                    fb_data = get_latest_sensor_data()
+                    if fb_data:
+                        _apply_firebase_to_sensor_data(fb_data)
+                        sensor_data['source'] = 'firebase_wokwi'
+                except Exception:
+                    pass
+        return
+
+    # Chế độ phần mềm hoặc hardware không có thiết bị thật → ưu tiên Wokwi/Firebase
+    if FIREBASE_AVAILABLE:
+        try:
+            fb_data = get_latest_sensor_data()
+            if fb_data:
+                _apply_firebase_to_sensor_data(fb_data)
+                sensor_data['source'] = 'firebase_wokwi'
+        except Exception as e:
+            print(f"⚠ Error reading from Firebase: {e}")
+
+    if sensor_data.get('source') != 'firebase_wokwi':
+        if _hardware_initialized:
+            try:
+                real_data = read_sensors()
+                sensor_data.update(real_data)
+                sensor_data['source'] = 'hardware'
+            except Exception:
+                sensor_data['last_update'] = datetime.now().isoformat()
+                sensor_data['source'] = 'simulation'
+        else:
+            sensor_data['last_update'] = datetime.now().isoformat()
+            sensor_data['source'] = 'simulation'
 
 # Inventory storage
 inventory = {
@@ -849,6 +985,64 @@ def login_required(f):
     return decorated
 
 
+def _client_ip() -> str:
+    forwarded_for = (request.headers.get('X-Forwarded-For') or '').split(',')[0].strip()
+    if forwarded_for:
+        return forwarded_for
+    return request.remote_addr or 'unknown'
+
+
+def _login_attempt_key(username: str) -> str:
+    return f"{_client_ip()}::{(username or '').strip().lower()}"
+
+
+def _check_login_lock(key: str):
+    now_ts = datetime.now().timestamp()
+    with _login_attempt_lock:
+        state = _login_attempts.get(key)
+        if not state:
+            return False, 0
+        if state.get('expires_at', 0) <= now_ts:
+            _login_attempts.pop(key, None)
+            return False, 0
+        if state.get('locked_until', 0) > now_ts:
+            return True, int(state['locked_until'] - now_ts)
+        return False, 0
+
+
+def _record_login_failure(key: str):
+    now_ts = datetime.now().timestamp()
+    with _login_attempt_lock:
+        state = _login_attempts.get(key)
+        if not state or state.get('expires_at', 0) <= now_ts:
+            state = {'count': 0, 'expires_at': now_ts + LOGIN_ATTEMPT_WINDOW_SECONDS, 'locked_until': 0}
+            _login_attempts[key] = state
+        state['count'] += 1
+        if state['count'] >= MAX_LOGIN_ATTEMPTS:
+            state['locked_until'] = now_ts + LOCKOUT_SECONDS
+
+
+def _clear_login_failure(key: str):
+    with _login_attempt_lock:
+        _login_attempts.pop(key, None)
+
+
+def _ensure_csrf_token() -> str:
+    token = session.get('_csrf_token')
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session['_csrf_token'] = token
+    return token
+
+
+def _valid_csrf_request() -> bool:
+    expected = session.get('_csrf_token')
+    provided = request.headers.get('X-CSRF-Token') or ''
+    if not expected or not provided:
+        return False
+    return hmac.compare_digest(expected, provided)
+
+
 @app.route('/login')
 def serve_login():
     """Serve the login page. Redirect to dashboard if already logged in."""
@@ -879,32 +1073,40 @@ def api_auth_login():
         if not username or not password:
             return jsonify({'success': False, 'error': 'Vui long nhap ten dang nhap va mat khau'}), 400
 
+        attempt_key = _login_attempt_key(username)
+        is_locked, retry_after = _check_login_lock(attempt_key)
+        if is_locked:
+            return jsonify({
+                'success': False,
+                'error': f'Tai khoan tam khoa do nhap sai nhieu lan. Thu lai sau {retry_after} giay'
+            }), 429
+
         if not DB_AVAILABLE:
-            # Fallback demo mode when database is unavailable
-            if username == 'admin' and password == 'admin123':
-                session['user_id'] = 0
-                session['username'] = 'admin'
-                session['full_name'] = 'Administrator'
-                session['role'] = 'admin'
-                return jsonify({'success': True, 'user': {'username': 'admin', 'full_name': 'Administrator', 'role': 'admin'}})
-            return jsonify({'success': False, 'error': 'Sai ten dang nhap hoac mat khau'}), 401
+            return jsonify({'success': False, 'error': 'He thong dang bao tri dang nhap (database khong kha dung)'}), 503
 
         user = get_user_by_username(username)
         if not user:
+            _record_login_failure(attempt_key)
             return jsonify({'success': False, 'error': 'Sai ten dang nhap hoac mat khau'}), 401
 
         if not user.get('is_active'):
+            _record_login_failure(attempt_key)
             return jsonify({'success': False, 'error': 'Tai khoan da bi khoa'}), 403
 
         if not verify_password(password, user['password_hash']):
+            _record_login_failure(attempt_key)
             return jsonify({'success': False, 'error': 'Sai ten dang nhap hoac mat khau'}), 401
 
-        # Set session
-        # Set session (không dùng permanent để tắt trình duyệt là văng)
+        _clear_login_failure(attempt_key)
+
+        # Regenerate session and set authenticated context
+        session.clear()
+        session.permanent = True
         session['user_id'] = user['id']
         session['username'] = user['username']
         session['full_name'] = user.get('full_name') or user['username']
         session['role'] = user.get('role', 'user')
+        csrf_token = _ensure_csrf_token()
 
         update_last_login(user['id'])
 
@@ -915,7 +1117,8 @@ def api_auth_login():
                 'username': user['username'],
                 'full_name': user.get('full_name'),
                 'role': user.get('role', 'user'),
-            }
+            },
+            'csrf_token': csrf_token
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -924,6 +1127,10 @@ def api_auth_login():
 @app.route('/api/auth/logout', methods=['POST'])
 def api_auth_logout():
     """Logout current user."""
+    if not session.get('user_id'):
+        return jsonify({'success': False, 'error': 'Chua dang nhap'}), 401
+    if not _valid_csrf_request():
+        return jsonify({'success': False, 'error': 'CSRF token khong hop le'}), 403
     session.clear()
     return jsonify({'success': True})
 
@@ -940,17 +1147,22 @@ def api_auth_me():
             'username': session.get('username'),
             'full_name': session.get('full_name'),
             'role': session.get('role', 'user'),
-        }
+        },
+        'csrf_token': _ensure_csrf_token()
     })
 
 
 @app.route('/api/auth/register', methods=['POST'])
 def api_auth_register():
-    """Register a new user (admin only or when no users exist)."""
+    """Register a new user (admin only)."""
     try:
-        # Only admin or first setup can register
+        if not session.get('user_id'):
+            return jsonify({'success': False, 'error': 'Chua dang nhap'}), 401
+        if not _valid_csrf_request():
+            return jsonify({'success': False, 'error': 'CSRF token khong hop le'}), 403
+
         caller_role = session.get('role')
-        if caller_role != 'admin' and DB_AVAILABLE and count_users() > 0:
+        if caller_role != 'admin':
             return jsonify({'success': False, 'error': 'Khong co quyen tao tai khoan'}), 403
 
         data = request.json or {}
@@ -962,6 +1174,8 @@ def api_auth_register():
 
         if not username or not password:
             return jsonify({'success': False, 'error': 'Vui long nhap ten dang nhap va mat khau'}), 400
+        if not re.fullmatch(r'[a-z0-9_]{3,32}', username):
+            return jsonify({'success': False, 'error': 'Ten dang nhap chi gom chu thuong, so, dau gach duoi (3-32 ky tu)'}), 400
         if len(password) < 6:
             return jsonify({'success': False, 'error': 'Mat khau phai co it nhat 6 ky tu'}), 400
         if role not in ('admin', 'user'):
@@ -978,9 +1192,49 @@ def api_auth_register():
         if not user_id:
             return jsonify({'success': False, 'error': 'Khong the tao tai khoan'}), 500
 
-        return jsonify({'success': True, 'user_id': user_id, 'username': username})
+        return jsonify({'success': True, 'user_id': user_id, 'username': username, 'role': role})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/auth/users', methods=['GET'])
+def api_auth_users():
+    """List users for account management (admin only)."""
+    if not session.get('user_id'):
+        return jsonify({'success': False, 'error': 'Chua dang nhap'}), 401
+    if session.get('role') != 'admin':
+        return jsonify({'success': False, 'error': 'Khong co quyen truy cap'}), 403
+    if not DB_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Database khong kha dung'}), 503
+
+    users = list_users()
+    return jsonify({'success': True, 'users': users})
+
+
+@app.route('/api/auth/users/<int:user_id>/active', methods=['POST'])
+def api_auth_set_user_active(user_id):
+    """Enable/disable account status (admin only)."""
+    if not session.get('user_id'):
+        return jsonify({'success': False, 'error': 'Chua dang nhap'}), 401
+    if not _valid_csrf_request():
+        return jsonify({'success': False, 'error': 'CSRF token khong hop le'}), 403
+    if session.get('role') != 'admin':
+        return jsonify({'success': False, 'error': 'Khong co quyen truy cap'}), 403
+    if not DB_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Database khong kha dung'}), 503
+    if user_id == session.get('user_id'):
+        return jsonify({'success': False, 'error': 'Khong the khoa tai khoan dang dang nhap'}), 400
+
+    data = request.json or {}
+    raw_is_active = data.get('is_active')
+    if isinstance(raw_is_active, bool):
+        is_active = raw_is_active
+    else:
+        is_active = str(raw_is_active).strip().lower() in ('1', 'true', 'yes', 'on')
+    ok = set_user_active(user_id, is_active)
+    if not ok:
+        return jsonify({'success': False, 'error': 'Khong the cap nhat trang thai tai khoan'}), 500
+    return jsonify({'success': True, 'user_id': user_id, 'is_active': is_active})
 
 
 
@@ -1026,13 +1280,16 @@ def api_chat():
         # Match VD: chỉnh nhiệt độ 5, giảm xuống 4, đặt thành 4°C
         set_temp_match = re.search(r'(chỉnh|đặt|thay|set|giảm|tăng|hạ|cho).*?(-?\d+\.?\d*)', text)
         if reply is None and set_temp_match and any(k in text for k in ['nhiệt', 'độ', '°c', 'c']):
-            try:
-                target = float(set_temp_match.group(2))
-                r = _tool_set_temperature(target)
-                extra = " (chế độ giả lập)" if r.get('hardware_stub') else ""
-                reply = f"Đã điều chỉnh nhiệt độ mục tiêu thành {r.get('target_temperature')}°C.{extra}"
-            except ValueError:
-                pass
+            if session.get('role') != 'admin':
+                reply = "Xin lỗi, chỉ có quản trị viên mới được phép điều chỉnh nhiệt độ."
+            else:
+                try:
+                    target = float(set_temp_match.group(2))
+                    r = _tool_set_temperature(target)
+                    extra = " (chế độ giả lập)" if r.get('hardware_stub') else ""
+                    reply = f"Đã điều chỉnh nhiệt độ mục tiêu thành {r.get('target_temperature')}°C.{extra}"
+                except ValueError:
+                    pass
 
         # Ý định: Hỏi nhiệt độ, độ ẩm hiện tại
         if reply is None and any(k in text for k in ['nhiệt độ', 'nhiet do', 'độ ẩm', 'do am', 'lạnh', 'nóng']):
@@ -1092,42 +1349,22 @@ def api_chat():
 
 @app.route('/api/sensors', methods=['GET'])
 def get_sensors():
-    """Get current sensor readings from Firebase (Wokwi), hardware, or simulation"""
-    # Ưu tiên đọc từ Firebase (Wokwi ESP32)
-    if FIREBASE_AVAILABLE:
+    """Get current sensor readings — nguồn phụ thuộc control mode (hardware vs software)."""
+    _refresh_sensor_data()
+
+    # Cập nhật status dựa trên nhiệt độ
+    temp = sensor_data.get('temperature')
+    if temp is not None:
         try:
-            fb_data = get_latest_sensor_data()
-            if fb_data:
-                sensor_data['temperature'] = fb_data.get('Temp', sensor_data['temperature'])
-                sensor_data['humidity'] = fb_data.get('Humi', sensor_data['humidity'])
-                sensor_data['door_state'] = fb_data.get('Door', 0)
-                sensor_data['pwm'] = fb_data.get('PWM', 0)
-                sensor_data['last_update'] = fb_data.get('last_update', datetime.now().isoformat())
-                sensor_data['source'] = 'firebase_wokwi'
-                
-                # Cập nhật status dựa trên nhiệt độ
-                temp = sensor_data['temperature']
-                if temp > 25:
-                    sensor_data['status'] = 'hot'
-                elif temp > 20:
-                    sensor_data['status'] = 'warming'
-                else:
-                    sensor_data['status'] = 'normal'
-        except Exception as e:
-            print(f"⚠ Error reading from Firebase: {e}")
-            # Fallback to hardware or simulation
-    
-    # Fallback to hardware if Firebase not available
-    if not FIREBASE_AVAILABLE or 'source' not in sensor_data:
-        if HARDWARE_AVAILABLE:
-            # Read from actual hardware
-            real_data = read_sensors()
-            sensor_data.update(real_data)
-            sensor_data['source'] = 'hardware'
-        else:
-            # Simulation mode - update timestamp
-            sensor_data['last_update'] = datetime.now().isoformat()
-            sensor_data['source'] = 'simulation'
+            t = float(temp)
+            if t > 25:
+                sensor_data['status'] = 'hot'
+            elif t > 20:
+                sensor_data['status'] = 'warming'
+            else:
+                sensor_data['status'] = 'normal'
+        except (TypeError, ValueError):
+            pass
     
     # Save to database if available (only save periodically to avoid too many writes)
     if DB_AVAILABLE:
@@ -1154,7 +1391,7 @@ def get_sensors():
 @app.route('/api/temperature', methods=['POST'])
 def set_temperature():
     """Set target temperature and control hardware / Firebase (Wokwi ESP32)"""
-    data = request.json
+    data = request.json or {}
     target_temp = data.get('temperature')
     
     if target_temp is None:
@@ -1165,14 +1402,18 @@ def set_temperature():
     sensor_data['target_temperature'] = target_temp
     sensor_data['last_update'] = datetime.now().isoformat()
     
-    # Lấy nhiệt độ hiện tại TRỰC TIẾP từ Firebase (Wokwi) - không dùng sensor_data cũ
+    # Lấy nhiệt độ hiện tại TRỰC TIẾP từ Firebase (Wokwi) — cùng key với get_latest_sensor_data()
     current_temp = target_temp
     if FIREBASE_AVAILABLE:
         try:
             fb_data = get_latest_sensor_data()
-            if fb_data and fb_data.get('Temp') is not None:
-                current_temp = float(fb_data.get('Temp', target_temp))
-                sensor_data['temperature'] = current_temp
+            if fb_data:
+                _apply_firebase_to_sensor_data(fb_data)
+                v = _parse_firebase_sensor_payload(fb_data)
+                if v and v['temperature'] is not None:
+                    current_temp = float(v['temperature'])
+                else:
+                    current_temp = float(sensor_data.get('temperature', target_temp))
         except Exception as e:
             print(f"⚠ Could not fetch current temp from Firebase: {e}")
             current_temp = sensor_data.get('temperature', target_temp)
@@ -1286,13 +1527,13 @@ def detect_objects():
             print("ESP32-CAM failed")
             return jsonify({'error': 'Failed to get image from ESP32-CAM'}), 500
         print("ESP32 image received")
-    try:
-        # img đã được decode ở trên (từ upload hoặc ESP32)
-        
-        # Preprocess image if using advanced models
+
+    DETECT_TIMEOUT = 90
+
+    def _run_detection():
+        nonlocal has_rotten
         if model_detect is not None:
             img = preprocess_image(img)
-        
         # Use advanced 2-stage detection if available, otherwise fallback
         use_advanced = model_detect is not None and model_classify is not None
         
@@ -1574,7 +1815,14 @@ def detect_objects():
             'saved_to_db': DB_AVAILABLE and session_id is not None,
             'advanced_mode': use_advanced
         })
-        
+
+    try:
+        with ThreadPoolExecutor(max_workers=1) as ex:
+            future = ex.submit(_run_detection)
+            try:
+                return future.result(timeout=DETECT_TIMEOUT)
+            except FuturesTimeoutError:
+                return jsonify({'error': 'Timeout', 'message': 'Phân tích ảnh quá lâu, vui lòng thử lại.'}), 504
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -1809,7 +2057,7 @@ def get_stats():
     db_stats = {}
     if DB_AVAILABLE:
         try:
-            from database import get_statistics
+            from core.database import get_statistics
             db_stats = get_statistics()
         except Exception as e:
             print(f"⚠ Error getting database statistics: {e}")
@@ -1835,9 +2083,9 @@ def get_sensor_history():
         return jsonify({'error': 'Database not available'}), 503
     
     try:
-        from database import get_sensor_history
-        limit = request.args.get('limit', 100, type=int)
-        history = get_sensor_history(limit)
+        from core.database import get_sensor_history as db_get_sensor_history
+        limit = min(request.args.get('limit', 100, type=int), 500)
+        history = db_get_sensor_history(limit)
         return jsonify({
             'success': True,
             'history': history,
@@ -1853,9 +2101,9 @@ def get_detection_history():
         return jsonify({'error': 'Database not available'}), 503
     
     try:
-        from database import get_detection_history
-        limit = request.args.get('limit', 50, type=int)
-        history = get_detection_history(limit)
+        from core.database import get_detection_history as db_get_detection_history
+        limit = min(request.args.get('limit', 50, type=int), 200)
+        history = db_get_detection_history(limit)
         return jsonify({
             'success': True,
             'history': history,
@@ -1872,8 +2120,8 @@ def get_firebase_history():
         return jsonify({'error': 'Firebase not available'}), 503
     
     try:
-        limit = request.args.get('limit', 50, type=int)
-        history = get_firebase_history(limit)
+        limit = min(request.args.get('limit', 50, type=int) or 50, 200)
+        history = get_firebase_sensor_history(limit)
         return jsonify({
             'success': True,
             'history': history,
@@ -1890,7 +2138,7 @@ def control_light():
         return jsonify({'error': 'Firebase not available'}), 503
     
     try:
-        data = request.json
+        data = request.json or {}
         value = data.get('value', 0)
         
         # Validate value (0 or 1)
@@ -1915,7 +2163,7 @@ def control_peltier():
         return jsonify({'error': 'Firebase not available'}), 503
     
     try:
-        data = request.json
+        data = request.json or {}
         value = data.get('value', 0)
         
         # Validate value (0-255)
@@ -1951,55 +2199,86 @@ def get_control_status():
         return jsonify({'error': str(e)}), 500
 
 def firebase_update_worker():
-    """Background thread để check Firebase liên tục và update cache (Real-time tối đa)"""
+    """Background thread — nguồn dữ liệu theo control mode: hardware hoặc Firebase (Wokwi)."""
     global firebase_latest_data, firebase_update_running
-    
-    if not FIREBASE_AVAILABLE:
+
+    if not FIREBASE_AVAILABLE and not _hardware_initialized:
         return
-    
+
     firebase_update_running = True
     last_state = None
     last_push_time = 0
-    
-    print("🔄 Firebase update worker started (High-Speed Mode)")
-    
+    last_hardware_read = 0
+    HARDWARE_READ_INTERVAL = 2.0  # DHT22 cần ≥2s giữa các lần đọc
+
+    print("🔄 Sensor update worker started (mode-aware)")
+
     while firebase_update_running:
         try:
             import time
-            fb_data = get_latest_sensor_data()
-            
-            if fb_data:
-                temp = fb_data.get('temperature', 0)
-                humi = fb_data.get('humidity', 0)
-                door = fb_data.get('door', 0)
-                pwm  = fb_data.get('pwm', 0)
-                
-                current_state = f"{temp}_{humi}_{door}_{pwm}"
-                current_time = time.time()
-                
-                if current_state != last_state or (current_time - last_push_time) > 1.5:
-                    firebase_latest_data = {
-                        'temperature': round(float(temp), 1),
-                        'humidity': int(humi),
-                        'door_state': int(door),
-                        'pwm': int(pwm),
-                        'source': 'firebase',
-                        'timestamp': datetime.now().isoformat()
-                    }
-                    
-                    last_state = current_state
-                    last_push_time = current_time
-                    
+            mode = get_control_mode()
+            current_time = time.time()
+
+            if mode == 'hardware' and _hardware_initialized:
+                if current_time - last_hardware_read >= HARDWARE_READ_INTERVAL:
+                    last_hardware_read = current_time
                     try:
-                        firebase_update_queue.put_nowait(firebase_latest_data)
-                    except:
-                        pass
-            
-            # Giảm độ trễ để bắt kịp Firebase
-            time.sleep(0.2)
-            
+                        real_data = read_sensors()
+                        temp = real_data.get('temperature')
+                        humi = real_data.get('humidity')
+                        if temp is not None and humi is not None:
+                            target = sensor_data.get('target_temperature', 4)
+                            current_state = f"{temp}_{humi}_0_0_{target}"
+                            if current_state != last_state or (current_time - last_push_time) > 1.5:
+                                firebase_latest_data = {
+                                    'temperature': round(float(temp), 1),
+                                    'humidity': int(float(humi)),
+                                    'door_state': 0,
+                                    'pwm': 0,
+                                    'target_temperature': sensor_data.get('target_temperature', 4),
+                                    'source': 'hardware',
+                                    'timestamp': datetime.now().isoformat()
+                                }
+                                last_state = current_state
+                                last_push_time = current_time
+                                try:
+                                    firebase_update_queue.put_nowait(firebase_latest_data)
+                                except Exception:
+                                    pass
+                    except Exception as e:
+                        print(f"⚠ Error reading hardware in worker: {e}")
+                time.sleep(0.2)
+            else:
+                # Chế độ phần mềm hoặc không có hardware → đọc Firebase
+                if FIREBASE_AVAILABLE:
+                    fb_data = get_latest_sensor_data()
+                    if fb_data:
+                        temp = fb_data.get('temperature', 0)
+                        humi = fb_data.get('humidity', 0)
+                        door = fb_data.get('door', 0)
+                        pwm = fb_data.get('pwm', 0)
+                        target = sensor_data.get('target_temperature', 4)
+                        current_state = f"{temp}_{humi}_{door}_{pwm}_{target}"
+                        if current_state != last_state or (current_time - last_push_time) > 1.5:
+                            firebase_latest_data = {
+                                'temperature': round(float(temp), 1),
+                                'humidity': int(humi),
+                                'door_state': int(door),
+                                'pwm': int(pwm),
+                                'target_temperature': sensor_data.get('target_temperature', 4),
+                                'source': 'firebase',
+                                'timestamp': datetime.now().isoformat()
+                            }
+                            last_state = current_state
+                            last_push_time = current_time
+                            try:
+                                firebase_update_queue.put_nowait(firebase_latest_data)
+                            except Exception:
+                                pass
+                time.sleep(0.2)
+
         except Exception as e:
-            print(f"⚠ Error in Firebase update worker: {e}")
+            print(f"⚠ Error in sensor update worker: {e}")
             import time
             time.sleep(1)
 
@@ -2100,11 +2379,11 @@ if __name__ == '__main__':
     print(f"📷 Camera with detection: /api/camera/stream/detect")
     print("=" * 50)
     
-    # Start Firebase update thread
-    if FIREBASE_AVAILABLE:
+    # Start sensor update thread (Firebase hoặc hardware tùy mode)
+    if FIREBASE_AVAILABLE or _hardware_initialized:
         firebase_update_thread = threading.Thread(target=firebase_update_worker, daemon=True)
         firebase_update_thread.start()
-        print("✓ Firebase real-time update thread started")
+        print("✓ Sensor real-time update thread started")
     
     # Cleanup on exit
     import atexit

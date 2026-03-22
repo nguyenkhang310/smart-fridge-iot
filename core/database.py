@@ -10,12 +10,37 @@ import os
 from contextlib import contextmanager
 from werkzeug.security import generate_password_hash, check_password_hash
 
+def _load_local_env_file():
+    """Load .env from project root if present (development convenience)."""
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    env_path = os.path.join(project_root, '.env')
+    if not os.path.exists(env_path):
+        return
+    try:
+        with open(env_path, 'r', encoding='utf-8') as f:
+            for raw_line in f:
+                line = raw_line.strip()
+                if not line or line.startswith('#') or '=' not in line:
+                    continue
+                key, value = line.split('=', 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
+    except Exception as e:
+        print(f"⚠ Could not load .env: {e}")
+
+
+_load_local_env_file()
+
 # Database configuration
 DB_CONFIG = {
     'host': os.getenv('DB_HOST', 'localhost'),
     'port': int(os.getenv('DB_PORT', 3306)),
     'user': os.getenv('DB_USER', 'root'),
-    'password': 'Nguyenkhang@123',
+    # Default password for local development convenience.
+    # Override via DB_PASSWORD env var or .env file when needed.
+    'password': os.getenv('DB_PASSWORD', 'Nguyenkhang@123'),
     'database': os.getenv('DB_NAME', 'smart_fridge'),
     'charset': 'utf8mb4',
     'collation': 'utf8mb4_unicode_ci'
@@ -153,10 +178,27 @@ def create_tables():
             
             conn.commit()
             print("✓ Database tables created/verified")
-            
+            _migrate_detections_session_id(conn, cursor)
+
     except Error as e:
         print(f"✗ Error creating tables: {e}")
         raise
+
+
+def _migrate_detections_session_id(conn, cursor):
+    """Thêm cột session_id vào detections nếu chưa có (migration)."""
+    try:
+        cursor.execute("""
+            SELECT COUNT(*) as cnt FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'detections' AND COLUMN_NAME = 'session_id'
+        """, (DB_CONFIG['database'],))
+        if cursor.fetchone()['cnt'] == 0:
+            cursor.execute("ALTER TABLE detections ADD COLUMN session_id INT NULL AFTER image_path")
+            cursor.execute("CREATE INDEX idx_session_id ON detections(session_id)")
+            conn.commit()
+            print("✓ Migration: added session_id to detections")
+    except Error as e:
+        print(f"⚠ Migration session_id: {e}")
 
 @contextmanager
 def get_connection():
@@ -253,15 +295,13 @@ def save_detection_session(total_items, fruit_count, food_count, other_count, im
         return None
 
 def save_detection(session_id, class_name, confidence, category, bbox_x, bbox_y, bbox_width, bbox_height, image_path=None):
-    """Save individual detection"""
+    """Save individual detection (gắn với session_id)."""
     try:
         with get_connection() as (conn, cursor):
-            # Note: session_id is stored implicitly via created_at timestamp
-            # You can add a session_id column to detections table if needed
             cursor.execute("""
-                INSERT INTO detections (class_name, confidence, category, bbox_x, bbox_y, bbox_width, bbox_height, image_path)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """, (class_name, confidence, category, bbox_x, bbox_y, bbox_width, bbox_height, image_path))
+                INSERT INTO detections (session_id, class_name, confidence, category, bbox_x, bbox_y, bbox_width, bbox_height, image_path)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (session_id, class_name, confidence, category, bbox_x, bbox_y, bbox_width, bbox_height, image_path))
             return cursor.lastrowid
     except Error as e:
         print(f"✗ Error saving detection: {e}")
@@ -297,16 +337,14 @@ def get_sensor_history(limit=100):
         return []
 
 def get_detection_history(limit=50):
-    """Get detection history"""
+    """Get detection history: sessions với số lượng detection thực tế (join detections)."""
     try:
         with get_connection() as (conn, cursor):
             cursor.execute("""
-                SELECT ds.*, 
-                       COUNT(d.id) as detection_count
+                SELECT ds.*, COALESCE(cnt.c, ds.total_items) as detection_count
                 FROM detection_sessions ds
-                LEFT JOIN detections d ON ds.id = d.id
-                GROUP BY ds.id
-                ORDER BY ds.created_at DESC 
+                LEFT JOIN (SELECT session_id, COUNT(*) as c FROM detections GROUP BY session_id) cnt ON ds.id = cnt.session_id
+                ORDER BY ds.created_at DESC
                 LIMIT %s
             """, (limit,))
             return cursor.fetchall()
@@ -415,6 +453,36 @@ def count_users():
     except Error as e:
         print(f"Error counting users: {e}")
         return 0
+
+
+def list_users():
+    """Return users list for admin screen (without password hash)."""
+    try:
+        with get_connection() as (conn, cursor):
+            cursor.execute("""
+                SELECT id, username, email, full_name, role, is_active, created_at, last_login
+                FROM users
+                ORDER BY created_at DESC
+            """)
+            return cursor.fetchall() or []
+    except Error as e:
+        print(f"Error listing users: {e}")
+        return []
+
+
+def set_user_active(user_id, is_active):
+    """Toggle user active status. Returns True when updated."""
+    try:
+        with get_connection() as (conn, cursor):
+            cursor.execute("""
+                UPDATE users
+                SET is_active = %s
+                WHERE id = %s
+            """, (1 if is_active else 0, user_id))
+            return cursor.rowcount > 0
+    except Error as e:
+        print(f"Error updating user active status: {e}")
+        return False
 
 
 def verify_password(plain_password, password_hash):

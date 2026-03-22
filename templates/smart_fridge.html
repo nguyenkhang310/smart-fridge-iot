@@ -464,7 +464,7 @@
             margin: 10px 0;
         }
 
-        button:not(.chat-panel-close):not(.chat-fab) {
+        button:not(.chat-panel-close):not(.chat-fab):not(.account-panel-close):not(.account-action-btn):not(.account-manage-trigger):not(.btn-logout) {
             width: 100%;
             padding: 12px;
             background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
@@ -478,13 +478,13 @@
             margin-top: 10px;
         }
 
-        button:not(.chat-panel-close):not(.chat-fab):hover {
+        button:not(.chat-panel-close):not(.chat-fab):not(.account-panel-close):not(.account-action-btn):not(.account-manage-trigger):not(.btn-logout):hover {
             transform: scale(1.02);
             box-shadow: 0 5px 15px rgba(30, 64, 175, 0.4);
             background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
         }
 
-        button:not(.chat-panel-close):not(.chat-fab):active {
+        button:not(.chat-panel-close):not(.chat-fab):not(.account-panel-close):not(.account-action-btn):not(.account-manage-trigger):not(.btn-logout):active {
             transform: scale(0.98);
         }
 
@@ -943,6 +943,28 @@
             margin-left: auto;
         }
 
+        .account-manage-trigger {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            border: 1px solid rgba(255,255,255,0.25);
+            border-radius: 999px;
+            padding: 6px 10px;
+            background: rgba(255,255,255,0.08);
+            color: white;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
+            width: auto !important;
+            margin-top: 0 !important;
+        }
+
+        .account-manage-trigger:hover {
+            background: rgba(255,255,255,0.16) !important;
+            border-color: rgba(255,255,255,0.55) !important;
+            transform: none !important;
+            box-shadow: none !important;
+        }
+
         .header-avatar {
             width: 36px;
             height: 36px;
@@ -1002,6 +1024,325 @@
             transform: none !important;
             box-shadow: none !important;
         }
+
+        .account-panel-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 1200;
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(4px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .account-panel-backdrop.active {
+            display: flex;
+            opacity: 1;
+        }
+
+        .account-panel {
+            width: min(800px, 100%);
+            max-height: 90vh;
+            overflow: auto;
+            background: #ffffff;
+            border-radius: 20px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            border: 1px solid rgba(226, 232, 240, 0.8);
+            color: #0f172a;
+            transform: translateY(20px);
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .account-panel-backdrop.active .account-panel {
+            transform: translateY(0);
+        }
+
+        .account-panel-header {
+            padding: 24px 28px;
+            border-bottom: 1px solid #f1f5f9;
+            background: #f8fafc;
+            border-radius: 20px 20px 0 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .account-panel-header h3 {
+            margin: 0;
+            font-size: 1.35em;
+            font-weight: 700;
+            color: #0f172a;
+            letter-spacing: -0.5px;
+        }
+
+        .account-panel-close {
+            border: none;
+            background: #e2e8f0;
+            color: #475569;
+            border-radius: 50%;
+            width: 36px;
+            height: 36px;
+            cursor: pointer;
+            font-size: 1.4em;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+
+        .account-panel-close:hover {
+            background: #ef4444;
+            color: white;
+            transform: rotate(90deg);
+        }
+
+        .account-panel-body {
+            padding: 28px;
+            display: grid;
+            gap: 28px;
+        }
+
+        .account-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+        }
+
+        .account-grid input,
+        .account-grid select {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 12px;
+            font-size: 0.95em;
+            font-family: inherit;
+            color: #1e293b;
+            background: #f8fafc;
+            transition: all 0.2s ease;
+        }
+
+        .account-grid input:focus,
+        .account-grid select:focus {
+            outline: none;
+            border-color: #3b82f6;
+            background: #ffffff;
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+        }
+
+        .account-panel .muted {
+            color: #64748b;
+            font-size: 0.95em;
+            line-height: 1.5;
+            margin: 0;
+        }
+
+        .account-alert {
+            display: none;
+            padding: 14px 18px;
+            border-radius: 12px;
+            font-size: 0.95em;
+            font-weight: 600;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .account-alert.error {
+            display: flex;
+            background: #fef2f2;
+            color: #b91c1c;
+            border: 1px solid #fecaca;
+        }
+
+        .account-alert.success {
+            display: flex;
+            background: #f0fdf4;
+            color: #15803d;
+            border: 1px solid #bbf7d0;
+        }
+
+        #accountCreateForm {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            padding: 24px;
+            border-radius: 16px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            display: grid;
+            gap: 20px;
+            position: relative;
+        }
+
+        #accountCreateForm::before {
+            content: 'Thêm tài khoản mới';
+            display: block;
+            font-size: 0.85em;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: #64748b;
+            letter-spacing: 0.5px;
+            border-bottom: 2px solid #f1f5f9;
+            padding-bottom: 12px;
+            margin-bottom: 4px;
+        }
+
+        #accountCreateForm button[type="submit"] {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 1.05em;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+        }
+
+        #accountCreateForm button[type="submit"]:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35);
+        }
+
+        .account-users {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        }
+
+        .account-user-row {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 16px;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid #f1f5f9;
+            transition: background 0.2s ease;
+        }
+
+        .account-user-row:hover {
+            background: #f8fafc;
+        }
+
+        .account-user-row:last-child {
+            border-bottom: none;
+        }
+        
+        .account-user-avatar {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%);
+            color: #4338ca;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 1.25em;
+            box-shadow: inset 0 2px 4px rgba(255,255,255,0.4);
+            border: 1px solid #c7d2fe;
+        }
+
+        .account-user-meta {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 0;
+        }
+
+        .account-user-name {
+            font-size: 1.05em;
+            font-weight: 700;
+            color: #1e293b;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .account-user-sub {
+            font-size: 0.9em;
+            color: #64748b;
+        }
+
+        .role-badge {
+            background: #f1f5f9;
+            color: #475569;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 0.75em;
+            font-weight: 600;
+            border: 1px solid #e2e8f0;
+        }
+
+        .role-badge.admin {
+            background: #fffbeb;
+            color: #b45309;
+            border-color: #fde68a;
+        }
+
+        .status-pill {
+            padding: 6px 14px;
+            border-radius: 8px;
+            font-size: 0.8em;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+        }
+
+        .status-pill.active {
+            background: #dcfce7;
+            color: #166534;
+            border: 1px solid #bbf7d0;
+        }
+
+        .status-pill.inactive {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+        }
+
+        .account-action-btn {
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.85em;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 1px solid transparent;
+            width: auto;
+            margin: 0;
+        }
+        
+        .btn-lock {
+            background: #fff1f2;
+            color: #e11d48;
+            border-color: #ffe4e6;
+        }
+        
+        .btn-lock:hover {
+            background: #e11d48;
+            color: white;
+            box-shadow: 0 4px 12px rgba(225, 29, 72, 0.2);
+        }
+        
+        .btn-unlock {
+            background: #f0fdf4;
+            color: #16a34a;
+            border-color: #dcfce7;
+        }
+        
+        .btn-unlock:hover {
+            background: #16a34a;
+            color: white;
+            box-shadow: 0 4px 12px rgba(22, 163, 74, 0.2);
+        }
     </style>
 </head>
 <body>
@@ -1034,15 +1375,50 @@
                 <div class="university-name-en">Ho Chi Minh City University of Technology and Engineering</div>
             </div>
             <div class="header-user-widget">
-                <div class="header-user-info">
-                    <span class="header-username" id="headerUsername">--</span>
-                    <span class="header-role" id="headerRole">--</span>
-                </div>
-                <div class="header-avatar" id="headerAvatar">?</div>
+                <button class="account-manage-trigger" id="accountManageTrigger" type="button" title="Mở quản lý tài khoản">
+                    <div class="header-user-info">
+                        <span class="header-username" id="headerUsername">--</span>
+                        <span class="header-role" id="headerRole">--</span>
+                    </div>
+                    <div class="header-avatar" id="headerAvatar">?</div>
+                </button>
                 <button class="btn-logout" id="btnLogout" onclick="handleLogout()">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-                    Dang xuat
+                    Đăng xuất
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="account-panel-backdrop" id="accountPanelBackdrop">
+        <div class="account-panel" role="dialog" aria-modal="true" aria-label="Quản lý tài khoản">
+            <div class="account-panel-header">
+                <h3>Quản lý tài khoản</h3>
+                <button class="account-panel-close" type="button" id="accountPanelCloseBtn" title="Đóng">×</button>
+            </div>
+            <div class="account-panel-body">
+                <div class="account-alert" id="accountAlert"></div>
+
+                <div id="accountAdminSection" style="display:none;">
+                    <form id="accountCreateForm" style="display:grid; gap:10px;">
+                        <div class="account-grid">
+                            <input id="accountFullName" type="text" placeholder="Họ và tên (tuỳ chọn)" />
+                            <input id="accountUsername" type="text" placeholder="Tên đăng nhập (a-z, 0-9, _)" required />
+                            <input id="accountPassword" type="password" placeholder="Mật khẩu (>= 6 ký tự)" required />
+                            <select id="accountRole">
+                                <option value="user">Người dùng</option>
+                                <option value="admin">Quản trị viên</option>
+                            </select>
+                        </div>
+                        <button type="submit" style="width:auto; margin-top:0;">Tạo tài khoản mới</button>
+                    </form>
+
+                    <div class="account-users" id="accountUsersList" style="margin-top:8px;"></div>
+                </div>
+
+                <div id="accountViewerSection" class="muted" style="display:none;">
+                    Bạn không có quyền quản trị tài khoản. Chỉ quản trị viên mới tạo/khoá/mở tài khoản.
+                </div>
             </div>
         </div>
     </div>
@@ -1109,6 +1485,9 @@
                 </div>
                 <div class="sensor-value temperature-value">
                     <span id="temperature">4.5</span><span class="sensor-unit">°C</span>
+                </div>
+                <div class="target-temp-row" style="font-size: 0.9em; color: #64748b; margin-top: 6px;">
+                    Target Temp: <strong id="temperatureTarget" style="color: #1d4ed8;">4</strong>°C
                 </div>
                 <div class="progress-bar">
                     <div class="progress-fill" id="tempProgress" style="width: 45%">45%</div>
@@ -1189,6 +1568,7 @@
                     <div class="oled-line">──────────────────────</div>
                     <div class="oled-line">Temp: <span id="oledTemp">4.5</span>°C</div>
                     <div class="oled-line">Humidity: <span id="oledHumidity">65</span>%</div>
+                    <div class="oled-line">Target: <span id="oledTargetTemp">4</span>°C</div>
                     <div class="oled-line">Status: <span id="oledStatus">NORMAL</span></div>
                     <div class="oled-line">──────────────────────</div>
                     <div class="oled-line">Items: <span id="oledItems">12</span> | Fruits: <span id="oledFruits">8</span></div>
@@ -1400,6 +1780,19 @@
             // Update OLED display
             document.getElementById('oledTemp').textContent = temp;
             document.getElementById('oledHumidity').textContent = humidity;
+            const targetVal = data.target_temperature;
+            if (targetVal !== undefined && targetVal !== null) {
+                const t = parseFloat(targetVal);
+                const targetStr = t % 1 === 0 ? String(Math.round(t)) : t.toFixed(1);
+                const te = document.getElementById('temperatureTarget');
+                const oe = document.getElementById('oledTargetTemp');
+                const te2 = document.getElementById('targetTemp');
+                const sl = document.getElementById('tempSlider');
+                if (te) te.textContent = targetStr;
+                if (oe) oe.textContent = targetStr;
+                if (te2) te2.textContent = targetStr;
+                if (sl) sl.value = targetVal;
+            }
             
             // Update progress bars
             const tempPercent = ((parseFloat(temp) + 2) / 12) * 100;
@@ -1471,11 +1864,14 @@
                 // Fallback to simulated data if API fails
                 const temp = (4 + Math.random() * 2).toFixed(1);
                 const humidity = Math.floor(60 + Math.random() * 10);
-                
-                document.getElementById('temperature').textContent = temp;
-                document.getElementById('humidity').textContent = humidity;
-                document.getElementById('oledTemp').textContent = temp;
-                document.getElementById('oledHumidity').textContent = humidity;
+                const t = document.getElementById('temperature');
+                const h = document.getElementById('humidity');
+                const ot = document.getElementById('oledTemp');
+                const oh = document.getElementById('oledHumidity');
+                if (t) t.textContent = temp;
+                if (h) h.textContent = humidity;
+                if (ot) ot.textContent = temp;
+                if (oh) oh.textContent = humidity;
             }
         }
         
@@ -1645,6 +2041,9 @@
                 const data = await response.json();
                 
                 if (response.ok && data.success) {
+                    const targetStr = targetTemp % 1 === 0 ? String(Math.round(targetTemp)) : targetTemp.toFixed(1);
+                    document.getElementById('temperatureTarget').textContent = targetStr;
+                    document.getElementById('oledTargetTemp').textContent = targetStr;
                     let msg = 'Đã cài đặt ' + targetTemp + '°C';
                     if (data.current_temp !== undefined) {
                         msg += ' (hiện tại: ' + data.current_temp + '°C)';
@@ -2311,6 +2710,13 @@ startSensorStream();
             return v;
         })();
 
+        function escapeHtml(s) {
+            if (s == null || typeof s !== 'string') return '';
+            const div = document.createElement('div');
+            div.textContent = s;
+            return div.innerHTML;
+        }
+
         function appendChat(role, text) {
             const box = document.getElementById('chatMessages');
             if (!box) return;
@@ -2325,7 +2731,8 @@ startSensorStream();
             } else {
                 const bubble = document.createElement('div');
                 bubble.className = 'chat-bubble ' + (role === 'user' ? 'user' : 'assistant');
-                bubble.innerHTML = text.replace(/\n/g, '<br>');
+                const safe = escapeHtml(text).replace(/\n/g, '<br>');
+                bubble.innerHTML = safe;
                 row.appendChild(bubble);
             }
             
@@ -2418,7 +2825,152 @@ startSensorStream();
         if (chatCloseBtn) chatCloseBtn.addEventListener('click', closeChat);
     </script>
     <script>
-        // ===== AUTH CHECK & USER INFO =====
+        // ===== AUTH CHECK + ACCOUNT MANAGEMENT =====
+        let currentUser = null;
+        let csrfToken = '';
+
+        function showAccountAlert(message, type) {
+            const el = document.getElementById('accountAlert');
+            if (!el) return;
+            el.textContent = message;
+            el.className = `account-alert ${type}`;
+        }
+
+        function clearAccountAlert() {
+            const el = document.getElementById('accountAlert');
+            if (!el) return;
+            el.className = 'account-alert';
+            el.textContent = '';
+        }
+
+        function openAccountPanel() {
+            const backdrop = document.getElementById('accountPanelBackdrop');
+            if (!backdrop) return;
+            backdrop.classList.add('active');
+            clearAccountAlert();
+            if (currentUser && currentUser.role === 'admin') {
+                loadUsers();
+            }
+        }
+
+        function closeAccountPanel() {
+            const backdrop = document.getElementById('accountPanelBackdrop');
+            if (!backdrop) return;
+            backdrop.classList.remove('active');
+        }
+
+        function renderUsers(users) {
+            const wrap = document.getElementById('accountUsersList');
+            if (!wrap) return;
+            if (!Array.isArray(users) || users.length === 0) {
+                wrap.innerHTML = '<div class="account-user-row"><div class="account-user-sub">Chưa có tài khoản nào.</div></div>';
+                return;
+            }
+            const esc = (s) => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
+            wrap.innerHTML = users.map((u) => {
+                const fullName = esc(u.full_name || u.username);
+                const username = esc(u.username || '');
+                const roleLabel = u.role === 'admin' ? 'Quản trị viên' : 'Người dùng';
+                const roleClass = u.role === 'admin' ? 'role-badge admin' : 'role-badge';
+                const activeClass = u.is_active ? 'active' : 'inactive';
+                const activeLabel = u.is_active ? 'Đang hoạt động' : 'Đã khóa';
+                const canToggle = currentUser && Number(currentUser.id) !== Number(u.id);
+                const toggleLabel = u.is_active ? 'Khóa' : 'Mở khóa';
+                const toggleClass = u.is_active ? 'btn-lock' : 'btn-unlock';
+                const toggleButton = canToggle
+                    ? `<button type="button" class="account-action-btn ${toggleClass}" onclick="toggleUserActive(${Number(u.id)}, ${u.is_active ? 'false' : 'true'})">${toggleLabel}</button>`
+                    : '';
+                const initial = fullName.charAt(0).toUpperCase();
+
+                return `
+                    <div class="account-user-row">
+                        <div class="account-user-avatar">${initial}</div>
+                        <div class="account-user-meta">
+                            <span class="account-user-name">${fullName} <span class="${roleClass}">${roleLabel}</span></span>
+                            <span class="account-user-sub">@${username}</span>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:12px;">
+                            <span class="status-pill ${activeClass}">${activeLabel}</span>
+                            ${toggleButton}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function loadUsers() {
+            try {
+                const res = await fetch('/api/auth/users', { credentials: 'same-origin' });
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                    throw new Error(data.error || 'Không thể tải danh sách tài khoản');
+                }
+                renderUsers(data.users || []);
+            } catch (err) {
+                showAccountAlert(err.message || 'Không thể tải danh sách tài khoản', 'error');
+            }
+        }
+
+        async function toggleUserActive(userId, nextState) {
+            try {
+                const res = await fetch(`/api/auth/users/${userId}/active`, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrfToken
+                    },
+                    body: JSON.stringify({ is_active: nextState })
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                    throw new Error(data.error || 'Không thể cập nhật trạng thái tài khoản');
+                }
+                showAccountAlert('Đã cập nhật trạng thái tài khoản.', 'success');
+                loadUsers();
+            } catch (err) {
+                showAccountAlert(err.message || 'Không thể cập nhật trạng thái tài khoản', 'error');
+            }
+        }
+
+        async function handleCreateAccount(event) {
+            event.preventDefault();
+            const username = document.getElementById('accountUsername').value.trim();
+            const password = document.getElementById('accountPassword').value;
+            const full_name = document.getElementById('accountFullName').value.trim();
+            const role = document.getElementById('accountRole').value;
+
+            if (!username || !password) {
+                showAccountAlert('Vui lòng nhập tên đăng nhập và mật khẩu.', 'error');
+                return;
+            }
+            if (password.length < 6) {
+                showAccountAlert('Mật khẩu phải có ít nhất 6 ký tự.', 'error');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrfToken
+                    },
+                    body: JSON.stringify({ username, password, full_name, role })
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                    throw new Error(data.error || 'Không thể tạo tài khoản');
+                }
+                document.getElementById('accountCreateForm').reset();
+                showAccountAlert(`Đã tạo tài khoản ${data.username}.`, 'success');
+                loadUsers();
+            } catch (err) {
+                showAccountAlert(err.message || 'Không thể tạo tài khoản', 'error');
+            }
+        }
+
         (async function() {
             try {
                 const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
@@ -2431,15 +2983,28 @@ startSensorStream();
                     window.location.href = '/login';
                     return;
                 }
-                const user = data.user;
-                const fullName = user.full_name || user.username || 'User';
+
+                currentUser = data.user || null;
+                csrfToken = data.csrf_token || '';
+
+                const fullName = currentUser.full_name || currentUser.username || 'User';
                 const initials = fullName.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
-                const isAdmin = user.role === 'admin';
+                const isAdmin = currentUser.role === 'admin';
                 const roleLabel = isAdmin ? 'Quản trị viên' : 'Người dùng';
 
                 document.getElementById('headerUsername').textContent = fullName;
                 document.getElementById('headerRole').textContent = roleLabel;
                 document.getElementById('headerAvatar').textContent = initials;
+
+                const accountAdminSection = document.getElementById('accountAdminSection');
+                const accountViewerSection = document.getElementById('accountViewerSection');
+                if (isAdmin) {
+                    if (accountAdminSection) accountAdminSection.style.display = 'block';
+                    if (accountViewerSection) accountViewerSection.style.display = 'none';
+                } else {
+                    if (accountAdminSection) accountAdminSection.style.display = 'none';
+                    if (accountViewerSection) accountViewerSection.style.display = 'block';
+                }
 
                 // === PHÂN QUYỀN: user chỉ xem, không điều chỉnh nhiệt độ ===
                 if (!isAdmin) {
@@ -2463,10 +3028,25 @@ startSensorStream();
             }
         })();
 
+        document.getElementById('accountManageTrigger')?.addEventListener('click', openAccountPanel);
+        document.getElementById('accountPanelCloseBtn')?.addEventListener('click', closeAccountPanel);
+        document.getElementById('accountPanelBackdrop')?.addEventListener('click', (event) => {
+            if (event.target.id === 'accountPanelBackdrop') {
+                closeAccountPanel();
+            }
+        });
+        document.getElementById('accountCreateForm')?.addEventListener('submit', handleCreateAccount);
+
         async function handleLogout() {
             try {
-                await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
-            } catch(e) {}
+                await fetch('/api/auth/logout', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'X-CSRF-Token': csrfToken
+                    }
+                });
+            } catch (e) {}
             window.location.href = '/login';
         }
     </script>
