@@ -1,1096 +1,703 @@
-# Smart Fridge IoT System with AI
-
 <div align="center">
+
+![Logo Trường Đại Học Công Nghệ Kỹ Thuật TP.HCM](static/img/logo-hcm-ute.png)
+
+# 🧊 Hệ thống Tủ lạnh Thông minh IoT với AI
 
 ![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)
 ![Flask](https://img.shields.io/badge/Flask-3.0.0-green.svg)
 ![YOLO](https://img.shields.io/badge/YOLO-v8-orange.svg)
 ![License](https://img.shields.io/badge/License-MIT-yellow.svg)
 
-**Intelligent IoT refrigerator system with integrated AI using YOLO for object detection, temperature/humidity monitoring, and control via Firebase/Wokwi**
+**Hệ thống tủ lạnh IoT thông minh với AI nhận diện trái cây, giám sát nhiệt độ/độ ẩm thời gian thực, điều khiển qua Firebase/Wokwi**
 
-[Documentation](#documentation) • [Quick Start](#quick-start) • [Configuration](#configuration) • [API](#api-endpoints) • [Troubleshooting](#troubleshooting)
+[Giới thiệu](#-giới-thiệu-dự-án) • [Tính năng](#-tính-năng) • [Cài đặt](#-cài-đặt) • [Cấu hình](#-cấu-hình) • [API](#-api-endpoints) • [Kiến trúc](#-kiến-trúc-hệ-thống) • [Tài liệu](#-tài-liệu)
 
 </div>
 
 ---
 
-## Table of Contents
+## 📋 Mục lục
 
-- [Overview](#overview)
-- [Features](#features)
-- [Quick Start](#quick-start)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [Camera Usage](#camera-usage)
-- [API Endpoints](#api-endpoints)
-- [System Architecture](#system-architecture)
-- [Hardware Integration](#hardware-integration)
-- [Troubleshooting](#troubleshooting)
-- [Documentation](#documentation)
-
----
-
-## Overview
-
-The **Smart Fridge IoT System** is a comprehensive solution for intelligent refrigerator management, featuring:
-
-- **AI Detection**: Uses YOLO to detect and classify fruits and food items
-- **Real-time Monitoring**: Tracks temperature and humidity via Firebase/Wokwi or physical sensors
-- **Multi-Camera Support**: Choose between computer webcam or ESP32-CAM
-- **Telegram Notifications**: Automatic alerts when spoiled fruits are detected
-- **Database Storage**: MySQL for storing history and statistics
-- **Web Interface**: Visual dashboard with responsive design and real-time updates
+- [Giới thiệu dự án](#-giới-thiệu-dự-án)
+- [Tính năng](#-tính-năng)
+- [Yêu cầu hệ thống](#-yêu-cầu-hệ-thống)
+- [Cài đặt](#-cài-đặt)
+- [Cấu hình](#-cấu-hình)
+- [Sử dụng](#-sử-dụng)
+- [API Endpoints](#-api-endpoints)
+- [Cơ sở dữ liệu](#-cơ-sở-dữ-liệu)
+- [Kiến trúc hệ thống](#-kiến-trúc-hệ-thống)
+- [Phần cứng IoT](#-phần-cứng-iot)
+- [Triển khai Production](#-triển-khai-production)
+- [Xử lý sự cố](#-xử-lý-sự-cố)
+- [Tài liệu](#-tài-liệu)
+- [Liên hệ](#-liên-hệ)
 
 ---
 
-## Features
+## 📖 Giới thiệu dự án
 
-### Sensor Monitoring
+**Hệ thống Tủ lạnh Thông minh IoT** là giải pháp toàn diện để quản lý tủ lạnh thông minh, tích hợp:
 
-| Feature | Description |
-|---------|-------------|
-| **Temperature** | Real-time temperature monitoring with threshold alerts |
-| **Humidity** | Monitor humidity inside the refrigerator |
-| **Auto Updates** | Sensor data updated every 0.2-3 seconds (SSE stream) |
-| **Multiple Data Sources** | Supports Firebase/Wokwi, Raspberry Pi, or simulation mode |
+- **Giám sát thời gian thực**: Nhiệt độ, độ ẩm, trạng thái cửa tủ qua Firebase/Wokwi hoặc phần cứng thật
+- **Điều khiển từ xa**: Điều chỉnh nhiệt độ mục tiêu (-2°C đến 10°C), điều khiển Peltier (làm lạnh), LED
+- **AI nhận diện**: YOLO phát hiện trái cây (Táo, Chuối, Xoài, Cam, Lê) và đánh giá độ chín/hỏng
+- **Cảnh báo tự động**: Thông báo qua Telegram khi phát hiện trái cây hỏng
+- **Đa nguồn camera**: Webcam hoặc ESP32-CAM qua WiFi
+- **Dashboard web**: Giao diện trực quan với cập nhật real-time qua Server-Sent Events (SSE)
+- **Hệ thống xác thực**: Đăng nhập/đăng xuất, đăng ký, phân quyền admin/user, bảo vệ brute-force
 
-### Control
-
-- **Temperature Adjustment**: Slider to set target temperature (-2°C to 10°C)
-- **Peltier Control**: Automatic PWM cooling adjustment via Firebase
-- **LED Control**: Turn on/off LED lights in the refrigerator
-- **Visual Interface**: Progress bars showing system status
-- **Smart Alerts**: Notifications when temperature exceeds threshold
-
-### Camera & AI Detection
-
-#### Multi-Camera Support
-- **Webcam**: Uses integrated or USB camera from computer
-- **ESP32-CAM**: WiFi connection with ESP32-CAM module
-- **Easy Switching**: Select camera via 2 buttons on interface
-
-#### Advanced AI Detection
-- **Detection Model**: Detects fruits (Apple, Banana, Mango, Orange, Pear)
-- **Classification Model**: Classifies fruit ripeness/spoilage
-- **Color Analysis**: Uses HSV to evaluate ripeness
-- **Shelf Life Calculation**: Automatically calculates remaining days based on type and ripeness
-- **Bounding Box Drawing**: Displays detection boxes with color coding
-- **Confidence Score**: Shows accuracy percentage
-
-#### Automatic Alerts
-- **Telegram Notifications**: Sends alerts when spoiled fruits are detected
-- **Cooldown System**: Prevents notification spam (60-120 seconds)
-- **Image Attachments**: Includes detection images
-
-### OLED Display (Simulated)
-
-Displays real-time information:
-- Current temperature and humidity
-- System status (NORMAL/WARNING)
-- Item and fruit counts
-- Current time
-
-### Statistics & Inventory
-
-- **Total Items**: Automatic counting from detections
-- **Categorization**: Fruits, Food, Other items
-- **History**: Stores detection history in database
-- **Visual Dashboard**: Displays statistics with color coding
-
-### Database Integration
-
-- **MySQL**: Stores sensor data, detection sessions, inventory
-- **Firebase Realtime Database**: Syncs with Wokwi ESP32 simulation
-- **History**: View sensor and detection history via API
+Dự án hướng tới triển khai thực tế (ESP32, cảm biến, camera) nhưng có chế độ mô phỏng để demo bằng Wokwi.
 
 ---
 
-## Quick Start
+## ✨ Tính năng
 
-### Minimum Requirements
+### Giám sát cảm biến
 
-- **Python**: 3.8 or higher
-- **RAM**: Minimum 2GB (recommended 4GB+)
-- **Camera**: Webcam or ESP32-CAM (optional)
-- **Internet**: To download YOLO models (first time)
+| Tính năng | Mô tả |
+|-----------|-------|
+| **Nhiệt độ** | Theo dõi nhiệt độ theo thời gian thực với cảnh báo khi vượt ngưỡng |
+| **Độ ẩm** | Giám sát độ ẩm bên trong tủ lạnh |
+| **Cập nhật tự động** | Dữ liệu cảm biến cập nhật mỗi 0.2–3 giây (SSE stream) |
+| **Đa nguồn dữ liệu** | Hỗ trợ Firebase/Wokwi, Raspberry Pi, hoặc chế độ mô phỏng |
 
-### Quick Installation (3 Steps)
+### Điều khiển
+
+| Tính năng | Mô tả |
+|-----------|-------|
+| **Điều chỉnh nhiệt độ** | Slider đặt nhiệt độ mục tiêu (-2°C đến 10°C) |
+| **Peltier** | Điều khiển PWM làm lạnh tự động qua Firebase |
+| **LED** | Bật/tắt đèn bên trong tủ |
+| **Chế độ điều khiển** | `software` (Firebase/Wokwi) hoặc `hardware` (Raspberry Pi thật) |
+
+### Camera & AI nhận diện
+
+#### Đa nguồn camera
+- **Webcam**: Sử dụng camera máy tính (tích hợp hoặc USB)
+- **ESP32-CAM**: Kết nối WiFi với module ESP32-CAM
+- **Chuyển đổi dễ dàng**: Chọn nguồn qua 2 nút trên giao diện
+
+#### AI nhận diện nâng cao
+- **Mô hình phát hiện**: Nhận diện trái cây (Apple, Banana, Mango, Orange, Pear)
+- **Mô hình phân loại**: Phân loại độ chín/hỏng của trái cây
+- **Phân tích màu HSV**: Đánh giá độ chín qua không gian màu
+- **Tính hạn sử dụng**: Ước lượng số ngày còn lại theo loại và độ chín
+- **Bounding box**: Hiển thị khung nhận diện với màu (xanh = tốt, đỏ = hỏng, cam = khác)
+- **Độ tin cậy**: Hiển thị phần trăm chính xác
+
+#### Cảnh báo tự động
+- **Telegram**: Gửi cảnh báo khi phát hiện trái cây hỏng
+- **Cơ chế cooldown**: Tránh spam thông báo (60–120 giây)
+- **Đính kèm ảnh**: Gửi kèm ảnh nhận diện
+
+### Màn hình OLED (mô phỏng)
+
+Hiển thị thông tin thời gian thực:
+- Nhiệt độ và độ ẩm hiện tại
+- Trạng thái hệ thống (NORMAL/WARNING)
+- Số lượng vật phẩm và trái cây
+- Thời gian hiện tại
+
+### Thống kê & Tồn kho
+
+- **Tổng vật phẩm**: Đếm tự động từ kết quả nhận diện
+- **Phân loại**: Trái cây, Thực phẩm, Vật phẩm khác
+- **Lịch sử**: Lưu phiên nhận diện vào database
+- **Dashboard trực quan**: Hiển thị thống kê với màu sắc phân biệt
+
+### Hệ thống xác thực
+
+- **Đăng nhập/Đăng xuất**: Quản lý phiên người dùng
+- **Đăng ký tài khoản**: Tạo tài khoản mới
+- **Phân quyền**: Admin và User với quyền khác nhau
+- **Bảo vệ brute-force**: Khóa tài khoản sau N lần đăng nhập sai (mặc định 5 lần trong 15 phút)
+
+### Chatbot AI
+
+- Trợ lý dựa trên rule-based (tiếng Việt)
+- Hỗ trợ truy vấn: cảm biến, tồn kho, nhiệt độ
+- Nút chat nổi trên giao diện
+
+---
+
+## 🖥️ Yêu cầu hệ thống
+
+| Thành phần | Yêu cầu |
+|------------|---------|
+| **Python** | 3.8 trở lên |
+| **RAM** | Tối thiểu 2GB (khuyến nghị 4GB+) |
+| **Camera** | Webcam hoặc ESP32-CAM (tùy chọn) |
+| **Internet** | Cần khi tải mô hình YOLO lần đầu |
+| **MySQL** | Phiên bản 5.7+ hoặc 8.0+ (tùy chọn, để lưu lịch sử) |
+
+---
+
+## 🚀 Cài đặt
+
+### Cách 1: Cài đặt thủ công
 
 ```bash
 # 1. Clone repository
 git clone <repository-url>
 cd smart-fridge-iot
 
-# 2. Install dependencies
-pip install -r requirements.txt
-
-# 3. Run server
-python app.py
-```
-
-Then open browser: **http://localhost:5001**
-
----
-
-## Installation
-
-### Step 1: Environment Setup
-
-#### Windows
-```bash
-# Check Python version
-python --version  # Must be >= 3.8
-
-# Create virtual environment (recommended)
-python -m venv venv
-venv\Scripts\activate
-```
-
-#### Linux/macOS
-```bash
-# Check Python version
-python3 --version  # Must be >= 3.8
-
-# Create virtual environment
+# 2. Tạo môi trường ảo (khuyến nghị)
 python3 -m venv venv
+
+# Windows
+venv\Scripts\activate
+
+# Linux/macOS
 source venv/bin/activate
-```
 
-### Step 2: Install Dependencies
-
-```bash
-# Install all packages
+# 3. Cài đặt dependencies
+pip install --upgrade pip
 pip install -r requirements.txt
-```
 
-**Main packages:**
-- `Flask==3.0.0` - Web framework
-- `flask-cors==4.0.0` - CORS handling
-- `ultralytics==8.1.0` - YOLO models
-- `opencv-python==4.9.0.80` - Image/video processing
-- `numpy==1.26.3` - Numerical computing
-- `Pillow==10.2.0` - Image processing
-- `mysql-connector-python==8.2.0` - MySQL connection
-- `requests==2.31.0` - HTTP requests
+# 4. Tải mô hình YOLO (tự động tải lần đầu chạy)
+python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"
 
-**Optional (for Raspberry Pi):**
-```bash
-# Uncomment in requirements.txt if using Raspberry Pi
-# Adafruit-DHT==1.4.0  # DHT22 sensor
-# RPi.GPIO==0.7.1  # GPIO control
-# luma.oled==3.12.0  # OLED display
-```
+# 5. Tạo thư mục cần thiết
+mkdir -p uploads models logs
 
-### Step 3: Download YOLO Models
-
-#### Default Model (Automatic)
-YOLO model will automatically download on first run:
-- `yolov8n.pt` - Small, fast model (default)
-
-#### Advanced Models (Optional)
-To use specialized fruit detection models:
-
-1. Place model files in `models/` directory:
-   ```
-   models/
-   ├── fruit_detection.pt      # Fruit detection model
-   └── fruit_classification.pt  # Ripeness/spoilage classification model
-   ```
-
-2. Models will automatically load when server starts
-
-**Note**: If advanced models are not available, system will use `yolov8n.pt` as fallback.
-
-### Step 4: Configuration (Optional)
-
-See [Configuration](#configuration) section to configure:
-- ESP32-CAM IP address
-- Database connection
-- Firebase credentials
-- Telegram bot token
-
-### Step 5: Run Server
-
-```bash
+# 6. Chạy server
 python app.py
 ```
 
-**Sample output:**
-```
-==================================================
-Smart Fridge IoT Server Starting...
-==================================================
-Server will run on: http://localhost:5001
-YOLO Model: yolov8n.pt
-Upload folder: uploads
-Camera stream: /api/camera/stream
-Camera with detection: /api/camera/stream/detect
-==================================================
-Fruit detection model loaded: models/fruit_detection.pt
-Fruit classification model loaded: models/fruit_classification.pt
-Firebase Realtime Database connected (Wokwi)
-MySQL database initialized
- * Running on http://0.0.0.0:5001
+Mở trình duyệt: **http://localhost:5001**
+
+### Cách 2: Script tự động (Linux/macOS)
+
+```bash
+chmod +x install.sh
+./install.sh
 ```
 
-### Step 6: Access Interface
+Script sẽ:
+- Kiểm tra Python 3.8+
+- Tạo virtual environment
+- Cài đặt packages
+- Tải mô hình YOLO
+- Tạo thư mục `uploads`, `models`, `logs`
+- Tạo file `start.sh` để khởi động nhanh
+- Hỏi cài trên Raspberry Pi (GPIO, DHT, OLED)
+- Hỏi cài systemd service (tự khởi động)
 
-Open browser and navigate to: **http://localhost:5001**
+### Cách 3: Docker
+
+```bash
+# Build và chạy
+docker-compose up -d
+
+# Truy cập
+# http://localhost:5000
+```
+
+**Lưu ý**: Ứng dụng gốc chạy port **5001**; Docker map ra **5000**.
 
 ---
 
-## Configuration
+## ⚙️ Cấu hình
 
-### 1. ESP32-CAM Configuration
+### Biến môi trường (`.env`)
 
-In `app.py`, find the line:
+Tạo file `.env` tại thư mục gốc dự án:
 
-```python
-ESP32_CAM_IP = "http://192.168.137.14"  # Change to your ESP32-CAM IP
+```env
+# Database MySQL
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=your_password
+DB_NAME=smart_fridge
+
+# Session & Security
+SECRET_KEY=your-secret-key-here
+SESSION_COOKIE_SAMESITE=Lax
+SESSION_COOKIE_SECURE=false
+SESSION_LIFETIME_HOURS=12
+
+# Brute-force protection
+MAX_LOGIN_ATTEMPTS=5
+LOGIN_ATTEMPT_WINDOW_SECONDS=900
+LOCKOUT_SECONDS=900
+
+# Admin mặc định (tạo khi DB trống)
+BOOTSTRAP_ADMIN_USERNAME=admin
+BOOTSTRAP_ADMIN_PASSWORD=your_admin_password
+
+# Phần cứng thật (Raspberry Pi)
+USE_HARDWARE=false
 ```
 
-**How to find ESP32-CAM IP:**
-1. Connect ESP32-CAM to WiFi
-2. Check Serial Monitor for assigned IP
-3. Or check router admin panel
+### 1. Cấu hình ESP32-CAM
 
-**Test connection:**
+Trong `app.py`, dòng ~191:
+
+```python
+ESP32_CAM_IP = "http://192.168.137.16"  # Thay bằng IP ESP32-CAM của bạn
+```
+
+**Cách lấy IP ESP32-CAM:**
+1. Kết nối ESP32-CAM vào WiFi
+2. Xem Serial Monitor để biết IP được gán
+3. Hoặc xem trong trang quản trị router
+
+**Kiểm tra kết nối:**
 ```bash
-# Test if ESP32-CAM is working
-curl http://192.168.137.14/capture
+curl http://192.168.137.16/capture
 ```
 
-### 2. Database Configuration (MySQL)
+### 2. Cấu hình MySQL
 
-See `DATABASE_SETUP.md` for database setup instructions.
+Xem chi tiết trong `docs/DATABASE_SETUP.md`.
 
-**Configuration in `database.py`:**
-```python
-DB_CONFIG = {
-    'host': 'localhost',
-    'user': 'your_username',
-    'password': 'your_password',
-    'database': 'smart_fridge'
-}
-```
-
-**Create database:**
 ```sql
-CREATE DATABASE smart_fridge;
+CREATE DATABASE smart_fridge
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
 ```
 
-### 3. Firebase Configuration (Wokwi)
+Cấu hình trong `core/database.py` hoặc qua biến môi trường `DB_*`.
 
-See `FIREBASE_WOKWI_SETUP.md` for Firebase setup.
+### 3. Cấu hình Firebase (Wokwi)
 
-**Configuration in `firebase_integration.py`:**
-```python
-# Add Firebase credentials
-FIREBASE_CONFIG = {
-    "apiKey": "your-api-key",
-    "authDomain": "your-project.firebaseapp.com",
-    "databaseURL": "https://your-project.firebaseio.com",
-    # ...
-}
-```
+Xem `docs/FIREBASE_WOKWI_SETUP.md` và `docs/WOKWI_REALTIME_FIX.md`.
 
-### 4. Telegram Bot Configuration
+Cấu hình trong `core/firebase_integration.py`:
+- Firebase Database URL
+- Auth token hoặc credentials
 
-**Create bot:**
-1. Find `@BotFather` on Telegram
-2. Send `/newbot` and follow instructions
-3. Get Bot Token
+### 4. Cấu hình Telegram Bot
 
-**Configuration in `telegram_notify.py`:**
+**Tạo bot:**
+1. Tìm `@BotFather` trên Telegram
+2. Gửi `/newbot` và làm theo hướng dẫn
+3. Lấy Bot Token
+
+**Cấu hình trong `core/telegram_notify.py`:**
 ```python
 TELEGRAM_BOT_TOKEN = "your-bot-token"
-TELEGRAM_CHAT_ID = "your-chat-id"  # Your chat ID
+TELEGRAM_CHAT_ID = "your-chat-id"
 ```
 
-**Get Chat ID:**
-1. Send message to bot
-2. Visit: `https://api.telegram.org/bot<TOKEN>/getUpdates`
-3. Find `chat.id` in response
+**Lấy Chat ID:**
+1. Gửi tin nhắn cho bot
+2. Truy cập: `https://api.telegram.org/bot<TOKEN>/getUpdates`
+3. Tìm `chat.id` trong response
 
-### 5. Port Configuration
+### 5. Mô hình YOLO tùy chỉnh (tùy chọn)
 
-Default server runs on port **5001**. To change:
+Đặt các file model vào thư mục `models/`:
 
-In `app.py`, last line:
+```
+models/
+├── fruit_detection.pt      # Mô hình phát hiện trái cây
+└── fruit_classification.pt # Mô hình phân loại độ chín/hỏng
+```
+
+Nếu không có, hệ thống dùng `yolov8n.pt` làm fallback.
+
+### 6. Cấu hình cổng (port)
+
+Mặc định server chạy port **5001**. Thay đổi trong `app.py` (dòng cuối):
+
 ```python
 app.run(debug=True, use_reloader=False, host='0.0.0.0', port=5001)
 ```
 
-Change `5001` to desired port.
+---
+
+## 📱 Sử dụng
+
+### Trang đăng nhập
+
+- Truy cập `http://localhost:5001/login`
+- Đăng nhập với tài khoản admin/user
+- Admin đầu tiên được tạo từ `BOOTSTRAP_ADMIN_USERNAME` và `BOOTSTRAP_ADMIN_PASSWORD` khi DB trống
+
+### Dashboard chính
+
+- **System Status Bar**: Trạng thái API, Firebase, DB, Camera
+- **Cards cảm biến**: Nhiệt độ, độ ẩm, thanh tiến độ, slider điều chỉnh nhiệt độ
+- **OLED mô phỏng**: Hiển thị thông tin giống màn hình thật
+- **Thống kê tồn kho**: Tổng vật phẩm, trái cây, thực phẩm, khác
+- **Camera & AI**: Chọn nguồn (Webcam/ESP32), xem stream, upload ảnh phân tích
+- **Kết quả nhận diện**: Bảng có lọc (Tất cả/Trái cây/Thực phẩm/Khác), trạng thái chín/hỏng, hạn sử dụng
+- **Chat**: Nút chat nổi, gửi câu hỏi về cảm biến, tồn kho
+
+### Chọn nguồn camera
+
+1. **Webcam**: Nhấn nút "Webcam" → stream từ camera máy tính
+2. **ESP32-CAM**: Nhấn nút "ESP32-CAM" → stream từ ESP32 (đảm bảo IP đúng và cùng mạng)
+
+### Phân tích ảnh
+
+1. Kéo thả ảnh vào vùng upload hoặc chọn file
+2. Nhấn "Phân tích bằng AI"
+3. Xem kết quả: tên đối tượng, loại, độ tin cậy, trạng thái chín/hỏng, hạn sử dụng
 
 ---
 
-## Camera Usage
+## 📡 API Endpoints
 
-### Selecting Camera Source
+### Xác thực (Auth)
 
-System supports 2 camera types:
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| `GET` | `/login` | Trang đăng nhập |
+| `POST` | `/api/auth/login` | Đăng nhập |
+| `POST` | `/api/auth/logout` | Đăng xuất |
+| `GET` | `/api/auth/me` | Thông tin user hiện tại |
+| `POST` | `/api/auth/register` | Đăng ký tài khoản |
+| `GET` | `/api/auth/users` | Danh sách user (admin) |
+| `POST` | `/api/auth/users/<id>/active` | Kích hoạt/vô hiệu hóa user |
 
-#### Webcam
-- Uses integrated or USB camera
-- Auto-detects camera (index 0, 1)
-- Supports Windows (DirectShow) and Linux/macOS
+### Trang & Chế độ
 
-**Usage:**
-1. Connect webcam to computer
-2. Click **"Webcam"** button on interface
-3. System will automatically start webcam
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| `GET` | `/` | Dashboard (yêu cầu đăng nhập) |
+| `GET` | `/api/mode` | Lấy chế độ điều khiển (software/hardware) |
+| `POST` | `/api/mode` | Đặt chế độ điều khiển |
 
-#### ESP32-CAM
-- WiFi connection
-- Default IP: `192.168.137.14` (can be changed)
+### Cảm biến & Điều khiển
 
-**Usage:**
-1. Ensure ESP32-CAM is connected to WiFi and running
-2. Check IP address in `app.py`
-3. Click **"ESP32-CAM"** button on interface
-
-### Detection Mode
-
-After selecting camera, stream will automatically start with **AI Detection**:
-- Real-time fruit detection
-- Bounding boxes with color coding:
-  - **Green**: Good fruit
-  - **Red**: Spoiled fruit
-  - **Orange**: Other items
-- Display name and confidence score
-
-### Upload Image for Analysis
-
-1. **Drag and drop** image into upload area
-2. Or **click to select file**
-3. Click **"Analyze with AI"**
-4. View detection results and bounding boxes
-
----
-
-## API Endpoints
-
-### Sensor & Control
-
-#### `GET /api/sensors`
-Get current sensor data
-
-**Response:**
-```json
-{
-  "temperature": 4.5,
-  "humidity": 65,
-  "target_temperature": 4,
-  "status": "normal",
-  "last_update": "2025-02-04T10:30:00",
-  "source": "firebase_wokwi"
-}
-```
-
-#### `POST /api/temperature`
-Set target temperature
-
-**Request:**
-```json
-{
-  "temperature": 5
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "target_temperature": 5,
-  "pwm_sent": 120,
-  "current_temp": 6.2,
-  "message": "Temperature set to 5°C"
-}
-```
-
-#### `GET /api/sensors/stream`
-Server-Sent Events (SSE) stream for real-time updates
-
-**Response:** Event stream with JSON data on each update
-
----
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| `GET` | `/api/sensors` | Dữ liệu cảm biến hiện tại |
+| `POST` | `/api/temperature` | Đặt nhiệt độ mục tiêu |
+| `GET` | `/api/sensors/stream` | SSE stream cập nhật real-time |
+| `GET` | `/api/oled` | Dữ liệu cho màn hình OLED |
 
 ### Camera
 
-#### `POST /api/camera/source`
-Select camera source (webcam or esp32)
-
-**Request:**
-```json
-{
-  "source": "webcam"  // or "esp32"
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "source": "webcam",
-  "message": "Camera source set to: webcam"
-}
-```
-
-#### `GET /api/camera/source`
-Get current camera source
-
-**Response:**
-```json
-{
-  "source": "webcam"
-}
-```
-
-#### `POST /api/camera/start`
-Start camera stream
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Webcam started successfully"
-}
-```
-
-#### `POST /api/camera/stop`
-Stop camera stream
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Camera stopped"
-}
-```
-
-#### `GET /api/camera/status`
-Check camera status
-
-**Response:**
-```json
-{
-  "available": true,
-  "streaming": false,
-  "camera_index": 0,
-  "error": null,
-  "message": "Camera ready"
-}
-```
-
-#### `GET /api/camera/stream`
-Video stream from ESP32-CAM (no detection)
-
-**Response:** Multipart video stream
-
-#### `GET /api/camera/stream/detect`
-Video stream with AI detection (webcam or ESP32-CAM)
-
-**Response:** Multipart video stream with bounding boxes
-
----
-
-### AI Detection
-
-#### `POST /api/detect`
-Detect objects in image
-
-**Request:** Multipart form-data with field `image`
-
-**Response:**
-```json
-{
-  "success": true,
-  "detections": [
-    {
-      "class": "TAO: CHIN",
-      "confidence": 0.92,
-      "category": "fruit",
-      "ripeness_status": "CHIN",
-      "days_left": "5-7 ngay",
-      "bbox": {
-        "x": 100,
-        "y": 150,
-        "width": 80,
-        "height": 90
-      }
-    }
-  ],
-  "total_items": 5,
-  "fruit_count": 3,
-  "food_count": 1,
-  "other_count": 1,
-  "annotated_image": "base64_encoded_image",
-  "timestamp": "2025-02-04T10:30:00",
-  "advanced_mode": true
-}
-```
-
----
-
-### Inventory & Stats
-
-#### `GET /api/inventory`
-Get current inventory information
-
-**Response:**
-```json
-{
-  "total_items": 12,
-  "fruit_count": 8,
-  "food_count": 3,
-  "other_count": 1,
-  "fruits": ["TAO: CHIN", "CHUOI: SONG"],
-  "foods": ["milk", "cheese"],
-  "other": ["bottle"],
-  "last_detection": "2025-02-04T10:30:00"
-}
-```
-
-#### `GET /api/stats`
-Get comprehensive statistics
-
-**Response:**
-```json
-{
-  "sensor_data": { /* sensor data */ },
-  "inventory": {
-    "total": 12,
-    "fruits": 8,
-    "foods": 3,
-    "other": 1
-  },
-  "item_counts": {
-    "TAO: CHIN": 3,
-    "CHUOI: SONG": 5
-  },
-  "last_update": "2025-02-04T10:30:00",
-  "database_stats": { /* database stats */ },
-  "database_enabled": true
-}
-```
-
-#### `GET /api/oled`
-Get data for OLED display
-
-**Response:**
-```json
-{
-  "temperature": 4.5,
-  "humidity": 65,
-  "status": "normal",
-  "total_items": 12,
-  "fruit_count": 8,
-  "time": "10:30:15"
-}
-```
-
----
-
-### Firebase (Wokwi)
-
-#### `GET /api/firebase/history`
-Get sensor history from Firebase
-
-**Query Parameters:**
-- `limit` (optional): Number of records (default: 50)
-
-**Response:**
-```json
-{
-  "success": true,
-  "history": [ /* array of sensor readings */ ],
-  "count": 50,
-  "source": "firebase_wokwi"
-}
-```
-
-#### `POST /api/firebase/control/light`
-Control LED light
-
-**Request:**
-```json
-{
-  "value": 1  // 0 = off, 1 = on
-}
-```
-
-#### `POST /api/firebase/control/peltier`
-Control Peltier (cooling)
-
-**Request:**
-```json
-{
-  "value": 120  // 0-255 (PWM value)
-}
-```
-
-#### `GET /api/firebase/control/status`
-Get current control status
-
-**Response:**
-```json
-{
-  "success": true,
-  "light": 1,
-  "peltier": 120,
-  "source": "firebase_wokwi"
-}
-```
-
----
-
-### History
-
-#### `GET /api/history/sensors`
-Get sensor history from database
-
-**Query Parameters:**
-- `limit` (optional): Number of records (default: 100)
-
-#### `GET /api/history/detections`
-Get detection history from database
-
-**Query Parameters:**
-- `limit` (optional): Number of records (default: 50)
-
----
-
-## System Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      Frontend (Web UI)                        │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │  Dashboard   │  │   Camera     │  │   Controls   │      │
-│  │   Display    │  │   Stream     │  │   & Stats    │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
-└───────────────────────┬─────────────────────────────────────┘
-                         │ HTTP/SSE
-┌────────────────────────▼─────────────────────────────────────┐
-│                  Flask Backend (app.py)                       │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │   YOLO AI    │  │   Camera     │  │   Sensor     │      │
-│  │  Detection  │  │   Handler    │  │   Manager    │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
-└───────┬───────────────┬───────────────┬───────────────┬─────┘
-        │               │               │               │
-┌───────▼──────┐ ┌──────▼──────┐ ┌─────▼──────┐ ┌─────▼──────┐
-│   Webcam/    │ │  ESP32-CAM  │ │  Firebase/ │ │   MySQL   │
-│   USB Cam    │ │   (WiFi)    │ │   Wokwi    │ │  Database  │
-└──────────────┘ └─────────────┘ └────────────┘ └────────────┘
-        │               │               │               │
-┌───────▼───────────────▼───────────────▼───────────────▼─────┐
-│                    Telegram Bot                              │
-│              (Notifications & Alerts)                        │
-└──────────────────────────────────────────────────────────────┘
-```
-
-### Data Flow
-
-1. **Sensor Data Flow:**
-   ```
-   Firebase/Wokwi → Flask API → SSE Stream → Frontend
-   ```
-
-2. **Camera Stream Flow:**
-   ```
-   Webcam/ESP32-CAM → OpenCV → YOLO Detection → Flask Stream → Frontend
-   ```
-
-3. **Detection Flow:**
-   ```
-   Image Upload → YOLO Detection → Classification → Database → Telegram Alert
-   ```
-
----
-
-## Hardware Integration
-
-### Raspberry Pi Setup
-
-See `HARDWARE_SETUP.md` for hardware connection instructions.
-
-#### DHT22 Sensor (Temperature/Humidity)
-
-**Connection:**
-```
-DHT22:
-├── VCC  → 3.3V (Pin 1)
-├── GND  → GND (Pin 6)
-└── DATA → GPIO4 (Pin 7)
-```
-
-**Sample code:**
-```python
-import Adafruit_DHT
-
-sensor = Adafruit_DHT.DHT22
-pin = 4
-
-def read_temperature_sensor():
-    humidity, temperature = Adafruit_DHT.read_retry(sensor, pin)
-    return temperature, humidity
-```
-
-#### OLED Display (SSD1306)
-
-**Connection (I2C):**
-```
-OLED SSD1306:
-├── VCC → 3.3V
-├── GND → GND
-├── SDA → GPIO2 (SDA)
-└── SCL → GPIO3 (SCL)
-```
-
-**Sample code:**
-```python
-from luma.core.interface.serial import i2c
-from luma.oled.device import ssd1306
-from PIL import Image, ImageDraw, ImageFont
-
-serial = i2c(port=1, address=0x3C)
-device = ssd1306(serial)
-
-def update_oled_display(temp, humidity, items):
-    image = Image.new('1', (128, 64))
-    draw = ImageDraw.Draw(image)
-    
-    draw.text((0, 0), f"Temp: {temp}°C", fill=255)
-    draw.text((0, 10), f"Humidity: {humidity}%", fill=255)
-    draw.text((0, 20), f"Items: {items}", fill=255)
-    
-    device.display(image)
-```
-
-### ESP32-CAM Setup
-
-1. **Upload ESP32-CAM code** (refer to ESP32-CAM examples)
-2. **Configure WiFi** in ESP32 code
-3. **Get IP address** from Serial Monitor
-4. **Update IP** in `app.py`:
-   ```python
-   ESP32_CAM_IP = "http://YOUR_ESP32_IP"
-   ```
-
----
-
-## Troubleshooting
-
-### Error: "Unexpected token '<', "<!doctype "... is not valid JSON"
-
-**Cause:** Server returning HTML instead of JSON (usually 404/500 error)
-
-**Solution:**
-1. Check if server is running: `http://localhost:5001`
-2. Check server console for detailed errors
-3. Ensure API route is correct (see API Endpoints section)
-
-### Error: "Camera not available"
-
-**Cause:** Webcam not detected or being used by another application
-
-**Solution:**
-1. **Windows:**
-   - Check Device Manager → Imaging devices
-   - Close apps using camera (Skype, Teams, etc.)
-   - Grant camera permission to Python/Terminal
-
-2. **Linux:**
-   ```bash
-   # Check camera
-   lsusb | grep -i camera
-   v4l2-ctl --list-devices
-   ```
-
-3. **macOS:**
-   - System Settings → Privacy → Camera
-   - Allow Terminal/Python to access camera
-
-### Error: "ESP32-CAM connection failed"
-
-**Cause:** ESP32-CAM not on same network or wrong IP
-
-**Solution:**
-1. Check ESP32-CAM is connected to WiFi
-2. Check IP address in Serial Monitor
-3. Test connection:
-   ```bash
-   curl http://192.168.137.14/capture
-   ```
-4. Ensure computer and ESP32-CAM are on same WiFi network
-
-### Error: "YOLO model failed to load"
-
-**Solution:**
-```bash
-# Download model manually
-pip install ultralytics
-python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"
-```
-
-### Error: "Port 5001 already in use"
-
-**Solution:**
-1. Find process using port:
-   ```bash
-   # Windows
-   netstat -ano | findstr :5001
-   
-   # Linux/macOS
-   lsof -i :5001
-   ```
-
-2. Kill process or change port in `app.py`
-
-### Error: "Database connection failed"
-
-**Solution:**
-1. Check MySQL is running:
-   ```bash
-   # Windows
-   services.msc → MySQL
-   
-   # Linux
-   sudo systemctl status mysql
-   ```
-
-2. Check credentials in `database.py`
-3. Create database if not exists:
-   ```sql
-   CREATE DATABASE smart_fridge;
-   ```
-
-### Error: "Firebase connection failed"
-
-**Solution:**
-1. Check Firebase credentials in `firebase_integration.py`
-2. Verify database URL is correct
-3. Check Firebase Console rules allow read/write
-
-### Performance Issues
-
-**YOLO Detection slow:**
-- Use smaller model (`yolov8n.pt` instead of `yolov8m.pt`)
-- Reduce input image resolution
-- Use GPU if available (CUDA)
-
-**Stream lag:**
-- Reduce frame rate in code
-- Optimize network (use LAN instead of WiFi)
-- Reduce JPEG quality
-
----
-
-## Documentation
-
-### Main Documentation
-
-- [YOLOv8 Documentation](https://docs.ultralytics.com/)
-- [Flask Documentation](https://flask.palletsprojects.com/)
-- [OpenCV Python Tutorials](https://docs.opencv.org/4.x/d6/d00/tutorial_py_root.html)
-- [Firebase Realtime Database](https://firebase.google.com/docs/database)
-- [ESP32-CAM Examples](https://github.com/espressif/arduino-esp32/tree/master/libraries/ESP32/examples/Camera)
-
-### Project Documentation
-
-- `DATABASE_SETUP.md` - MySQL setup guide
-- `FIREBASE_WOKWI_SETUP.md` - Firebase/Wokwi setup guide
-- `HARDWARE_SETUP.md` - Hardware connection guide
-- `WOKWI_REALTIME_FIX.md` - Wokwi real-time updates fix
-
-### Community & Support
-
-- [Ultralytics Discord](https://discord.gg/ultralytics)
-- [Report Issues](https://github.com/your-repo/issues)
-- Email: your-email@example.com
-
----
-
-## Testing
-
-### Test API with curl
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| `GET` | `/api/camera/stream` | Stream video (không detection) |
+| `GET` | `/api/camera/stream/detect` | Stream với YOLO detection |
+| `POST` | `/api/camera/start` | Bật camera |
+| `POST` | `/api/camera/stop` | Tắt camera |
+| `GET` | `/api/camera/source` | Lấy nguồn camera hiện tại |
+| `POST` | `/api/camera/source` | Đặt nguồn (webcam/esp32) |
+| `GET` | `/api/camera/status` | Trạng thái camera |
+
+### AI & Nhận diện
+
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| `POST` | `/api/detect` | Upload ảnh, chạy YOLO + phân loại |
+
+### Tồn kho & Thống kê
+
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| `GET` | `/api/inventory` | Tồn kho hiện tại |
+| `POST` | `/api/inventory/reset` | Reset tồn kho |
+| `GET` | `/api/detections/latest` | Kết quả nhận diện gần nhất |
+| `GET` | `/api/stats` | Thống kê tổng hợp |
+
+### Lịch sử
+
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| `GET` | `/api/history/sensors` | Lịch sử cảm biến (DB) |
+| `GET` | `/api/history/detections` | Lịch sử nhận diện (DB) |
+| `GET` | `/api/firebase/history` | Lịch sử cảm biến từ Firebase |
+
+### Firebase điều khiển
+
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| `POST` | `/api/firebase/control/light` | Bật/tắt LED |
+| `POST` | `/api/firebase/control/peltier` | Điều khiển Peltier PWM |
+| `GET` | `/api/firebase/control/status` | Trạng thái điều khiển |
+
+### Chatbot
+
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| `POST` | `/api/chat` | Gửi tin nhắn, nhận phản hồi rule-based |
+
+### Ví dụ gọi API
 
 ```bash
-# Test sensor data
+# Lấy dữ liệu cảm biến
 curl http://localhost:5001/api/sensors
 
-# Test set temperature
+# Đặt nhiệt độ
 curl -X POST http://localhost:5001/api/temperature \
   -H "Content-Type: application/json" \
   -d '{"temperature": 5}'
 
-# Test camera source
+# Chọn nguồn camera
 curl -X POST http://localhost:5001/api/camera/source \
   -H "Content-Type: application/json" \
   -d '{"source": "webcam"}'
 
-# Test detection (upload image)
+# Phân tích ảnh
 curl -X POST http://localhost:5001/api/detect \
   -F "image=@test_image.jpg"
 ```
 
-### Test with Python
+---
 
-```python
-import requests
+## 🗄️ Cơ sở dữ liệu
 
-# Test sensors
-response = requests.get('http://localhost:5001/api/sensors')
-print(response.json())
+### Schema MySQL
 
-# Test detection
-with open('test_image.jpg', 'rb') as f:
-    response = requests.post(
-        'http://localhost:5001/api/detect',
-        files={'image': f}
-    )
-    print(response.json())
+| Bảng | Mô tả |
+|------|-------|
+| `sensors` | Lịch sử nhiệt độ, độ ẩm, nhiệt độ mục tiêu, trạng thái |
+| `inventory` | Tổng vật phẩm, số trái cây/thực phẩm/khác theo thời điểm |
+| `detections` | Chi tiết từng đối tượng: class_name, confidence, category, bbox, image_path |
+| `detection_sessions` | Phiên nhận diện: tổng số, số trái cây/thực phẩm/khác, ảnh |
+| `temperature_settings` | Lịch sử thay đổi nhiệt độ mục tiêu, người thay đổi |
+| `users` | Username, email, password_hash, role (admin/user), is_active |
+
+File schema đầy đủ: `data/schema.sql`
+
+---
+
+## 🏗️ Kiến trúc hệ thống
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Frontend (Web Dashboard)                         │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
+│  │   Login     │  │  Dashboard  │  │   Camera    │  │   Chatbot   │    │
+│  │   Auth      │  │   Sensors   │  │   Stream    │  │   Panel     │    │
+│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘    │
+└──────────────────────────────┬──────────────────────────────────────────┘
+                               │ HTTP / SSE
+┌──────────────────────────────▼──────────────────────────────────────────┐
+│                     Flask Backend (app.py)                               │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
+│  │ YOLO AI     │  │   Camera    │  │   Sensor    │  │   Auth &    │    │
+│  │ Detection   │  │   Handler   │  │   Manager   │  │   Session   │    │
+│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘    │
+└─────┬──────────────┬──────────────┬──────────────┬──────────────┬──────┘
+      │              │              │              │              │
+┌─────▼──────┐ ┌─────▼──────┐ ┌────▼────┐ ┌───────▼──────┐ ┌─────▼──────┐
+│  Webcam/   │ │ ESP32-CAM  │ │Firebase/│ │    MySQL     │ │  Telegram  │
+│  USB Cam   │ │   (WiFi)   │ │  Wokwi  │ │   Database   │ │    Bot     │
+└────────────┘ └────────────┘ └─────────┘ └──────────────┘ └────────────┘
+```
+
+### Luồng dữ liệu
+
+1. **Cảm biến**: Firebase/Wokwi → Flask API → SSE Stream → Frontend
+2. **Camera**: Webcam/ESP32-CAM → OpenCV → YOLO → Flask Stream → Frontend
+3. **Nhận diện**: Upload ảnh → YOLO + Phân loại → Database → Telegram (nếu có trái cây hỏng)
+4. **Điều khiển**: User đổi nhiệt độ → POST `/api/temperature` → Firebase `/Control` → ESP32 đọc và điều khiển Peltier
+
+### Cấu trúc thư mục
+
+```
+smart-fridge-iot/
+├── app.py                 # Ứng dụng Flask chính
+├── core/
+│   ├── database.py        # MySQL, auth, schema
+│   ├── firebase_integration.py
+│   ├── telegram_notify.py
+│   ├── hardware_integration.py
+│   └── raspberry_pi_config.py
+├── data/
+│   ├── control_mode.json  # software | hardware
+│   └── schema.sql
+├── docs/                  # Tài liệu chi tiết
+├── models/                # YOLO models
+├── static/img/            # Logo, hình nền
+├── templates/
+│   ├── login.html
+│   └── smart_fridge.html
+├── tests/
+├── uploads/               # Ảnh nhận diện
+├── requirements.txt
+├── Dockerfile
+├── docker-compose.yml
+├── install.sh
+└── smart-fridge.service   # Systemd
 ```
 
 ---
 
-## Production Deployment
+## 🔧 Phần cứng IoT
 
-### Using Gunicorn
+### Firebase / Wokwi (mô phỏng)
+
+- ESP32 đẩy dữ liệu cảm biến lên Firebase (`/Current`, `/History`)
+- Flask đọc Firebase và gửi lệnh điều khiển qua `/Control/Light`, `/Control/Peltier`, `/Control/TargetTemp`
+
+### ESP32-CAM
+
+- Camera WiFi tại `http://192.168.137.16` (mặc định)
+- URL chụp ảnh: `{IP}/capture`
+- Cấu hình IP trong `app.py`
+
+### Raspberry Pi (phần cứng thật)
+
+Bật bằng `USE_HARDWARE=true` trong `.env`.
+
+| Thành phần | GPIO / Giao tiếp | Ghi chú |
+|------------|------------------|---------|
+| DHT22 | GPIO4 | Nhiệt độ, độ ẩm |
+| OLED SSD1306 | I2C (SDA/SCL) | Màn hình trạng thái |
+| Relay | GPIO17 | Điều khiển nhiệt độ |
+| LED trạng thái | GPIO22, 27, 23 | |
+| Pi Camera | (tùy chọn) | Thay webcam |
+
+Chi tiết: `docs/HARDWARE_SETUP.md`, `core/raspberry_pi_config.py`
+
+---
+
+## 🚀 Triển khai Production
+
+### Gunicorn
 
 ```bash
 pip install gunicorn
 gunicorn -w 4 -b 0.0.0.0:5001 app:app
 ```
 
-### Using Docker
+### Systemd (Linux)
 
 ```bash
-# Build image
-docker build -t smart-fridge .
-
-# Run container
-docker run -p 5001:5001 smart-fridge
-```
-
-### Systemd Service (Linux)
-
-See `smart-fridge.service` file for systemd service setup.
-
-```bash
-# Copy service file
+# Chỉnh đường dẫn trong smart-fridge.service nếu cần
 sudo cp smart-fridge.service /etc/systemd/system/
-
-# Enable and start
+sudo systemctl daemon-reload
 sudo systemctl enable smart-fridge
 sudo systemctl start smart-fridge
-
-# Check status
 sudo systemctl status smart-fridge
 ```
 
----
+### Docker
 
-## Security
-
-### Production Recommendations
-
-1. **HTTPS**: Use reverse proxy (Nginx) with SSL certificate
-2. **Authentication**: Add authentication for API endpoints
-3. **Rate Limiting**: Limit number of requests
-4. **Input Validation**: Validate all user input
-5. **File Upload Limits**: Limit file upload size
-
-**Example Authentication:**
-```python
-from flask_httpauth import HTTPBasicAuth
-
-auth = HTTPBasicAuth()
-
-@auth.verify_password
-def verify_password(username, password):
-    return username == 'admin' and password == 'secret'
-
-@app.route('/api/sensors')
-@auth.login_required
-def get_sensors():
-    # Protected endpoint
-    pass
+```bash
+docker build -t smart-fridge .
+docker run -p 5001:5001 smart-fridge
 ```
 
 ---
 
-## Performance Benchmarks
+## 🔍 Xử lý sự cố
 
-| Operation | Time | Notes |
-|-----------|------|-------|
-| YOLO Detection (yolov8n) | ~100-300ms | CPU only |
-| YOLO Detection (yolov8n + GPU) | ~20-50ms | CUDA enabled |
-| API Response | <50ms | Average |
-| SSE Update | Real-time | ~0.2s interval |
-| Image Upload & Process | ~500ms-2s | Depends on image size |
+### Lỗi: "Unexpected token '<', '<!doctype'... is not valid JSON"
+
+**Nguyên nhân**: Server trả về HTML (404/500) thay vì JSON.
+
+**Giải pháp**:
+1. Kiểm tra server chạy: `http://localhost:5001`
+2. Xem log console server
+3. Kiểm tra đúng endpoint API
+
+### Lỗi: "Camera not available"
+
+**Giải pháp**:
+- **Windows**: Kiểm tra Device Manager, đóng app dùng camera, cấp quyền cho Python
+- **Linux**: `lsusb`, `v4l2-ctl --list-devices`
+- **macOS**: System Settings → Privacy → Camera → Cho phép Terminal/Python
+
+### Lỗi: "ESP32-CAM connection failed"
+
+1. ESP32-CAM và máy tính cùng mạng WiFi
+2. Kiểm tra IP trong Serial Monitor
+3. Test: `curl http://192.168.137.16/capture`
+4. Cập nhật `ESP32_CAM_IP` trong `app.py`
+
+### Lỗi: "YOLO model failed to load"
+
+```bash
+pip install ultralytics
+python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"
+```
+
+### Lỗi: "Port 5001 already in use"
+
+```bash
+# Linux/macOS
+lsof -i :5001
+
+# Windows
+netstat -ano | findstr :5001
+```
+
+Tắt process hoặc đổi port trong `app.py`.
+
+### Lỗi: "Database connection failed"
+
+1. Kiểm tra MySQL đang chạy
+2. Kiểm tra `DB_*` trong `.env` hoặc `database.py`
+3. Tạo database: `CREATE DATABASE smart_fridge;`
+
+### Lỗi: "Firebase connection failed"
+
+1. Kiểm tra cấu hình trong `firebase_integration.py`
+2. Kiểm tra Firebase Console rules cho phép đọc/ghi
 
 ---
 
-## Contributing
+## 📚 Tài liệu
 
-Contributions are welcome! Please:
+### Tài liệu trong dự án
 
-1. **Fork** repository
-2. Create **branch** (`git checkout -b feature/AmazingFeature`)
-3. **Commit** changes (`git commit -m 'Add some AmazingFeature'`)
-4. **Push** to branch (`git push origin feature/AmazingFeature`)
-5. Create **Pull Request**
+| File | Nội dung |
+|------|----------|
+| `docs/DATABASE_SETUP.md` | Hướng dẫn cài đặt MySQL |
+| `docs/FIREBASE_WOKWI_SETUP.md` | Cấu hình Firebase với Wokwi |
+| `docs/HARDWARE_SETUP.md` | Kết nối phần cứng |
+| `docs/PROJECT_OVERVIEW.md` | Tổng quan dự án |
+| `docs/WOKWI_REALTIME_FIX.md` | Sửa lỗi real-time Wokwi |
 
-### Code Style
+### Thư viện & tài liệu tham khảo
 
-- Follow Python PEP 8
-- Add comments for complex code
-- Write docstrings for functions
-- Test code before committing
-
----
-
-## License
-
-MIT License - see `LICENSE` file for details
+- [YOLOv8 Documentation](https://docs.ultralytics.com/)
+- [Flask Documentation](https://flask.palletsprojects.com/)
+- [OpenCV Python](https://docs.opencv.org/)
+- [Firebase Realtime Database](https://firebase.google.com/docs/database)
+- [ESP32-CAM Examples](https://github.com/espressif/arduino-esp32/tree/master/libraries/ESP32/examples/Camera)
 
 ---
 
-## Authors
+## 📦 Dependencies chính
 
-**Ho Chi Minh City University of Technology and Engineering (HCM-UTE)**
+| Package | Phiên bản | Mục đích |
+|---------|-----------|----------|
+| Flask | 3.0.0 | Web framework |
+| flask-cors | 4.0.0 | CORS |
+| ultralytics | 8.1.0 | YOLOv8 |
+| opencv-python | 4.9.0.80 | Xử lý ảnh/video |
+| mysql-connector-python | 8.2.0 | MySQL |
+| requests | 2.31.0 | HTTP |
+| Pillow | 10.2.0 | Xử lý ảnh |
+| google-generativeai | 0.8.5 | (Tùy chọn) Gemini |
 
-**Team 3 - Smart Fridge IoT Project**
+**Raspberry Pi (uncomment trong requirements.txt):**
+- Adafruit-DHT, RPi.GPIO, luma.oled, paho-mqtt
 
 ---
 
-## Acknowledgments
+## 📄 License
 
-- **Ultralytics** - YOLOv8 models and framework
-- **Flask Team** - Excellent web framework
-- **OpenCV Community** - Computer vision library
-- **Raspberry Pi Foundation** - Hardware platform
-- **Firebase/Google** - Realtime database
-- **ESP32 Community** - IoT platform
+MIT License – xem file `LICENSE` để biết chi tiết.
 
 ---
 
-## Contact & Support
+## 👤 Liên hệ
 
-- Email: nguyenkhang031006@gmail.com.
-- Issues: [GitHub Issues](https://github.com/your-repo/issues)
-- Documentation: See `.md` files in project
+| Thông tin | Giá trị |
+|-----------|---------|
+| **Tên** | Nguyên Khang |
+| **Email** | nguyenkhang031006@gmail.com |
 
 ---
 
 <div align="center">
 
-**Good luck!**
+**Hệ thống Tủ lạnh Thông minh IoT với AI**
 
-Made by HCM-UTE Team 3
+Đồ án – Trường Đại Học Công Nghệ Kỹ Thuật TP.HCM (HCM-UTE)
 
 </div>
