@@ -176,6 +176,13 @@ def _tool_set_temperature(target_temp: float):
         else:
             hardware_stub = True
 
+    # Lưu lịch sử điều chỉnh vào DB (chatbot giống slider)
+    if DB_AVAILABLE:
+        try:
+            save_temperature_setting(target_temp, previous_temp, changed_by='chatbot')
+        except Exception as e:
+            print(f"⚠ Error saving temperature setting (chatbot): {e}")
+
     return {
         'success': True,
         'mode': mode,
@@ -1273,11 +1280,11 @@ def api_chat():
 
         text = message.lower()
         reply = None
+        temperature_set_by_chat = None
 
         import re
 
         # Ý định: Đặt nhiệt độ
-        # Match VD: chỉnh nhiệt độ 5, giảm xuống 4, đặt thành 4°C
         set_temp_match = re.search(r'(chỉnh|đặt|thay|set|giảm|tăng|hạ|cho).*?(-?\d+\.?\d*)', text)
         if reply is None and set_temp_match and any(k in text for k in ['nhiệt', 'độ', '°c', 'c']):
             if session.get('role') != 'admin':
@@ -1286,8 +1293,9 @@ def api_chat():
                 try:
                     target = float(set_temp_match.group(2))
                     r = _tool_set_temperature(target)
+                    temperature_set_by_chat = r.get('target_temperature')
                     extra = " (chế độ giả lập)" if r.get('hardware_stub') else ""
-                    reply = f"Đã điều chỉnh nhiệt độ mục tiêu thành {r.get('target_temperature')}°C.{extra}"
+                    reply = f"Đã điều chỉnh nhiệt độ mục tiêu thành {temperature_set_by_chat}°C.{extra}"
                 except ValueError:
                     pass
 
@@ -1342,7 +1350,10 @@ def api_chat():
             )
 
         _append_session_history(session_id, 'assistant', reply)
-        return jsonify({'success': True, 'reply': reply, 'session_id': session_id})
+        resp = {'success': True, 'reply': reply, 'session_id': session_id}
+        if temperature_set_by_chat is not None:
+            resp['target_temperature'] = temperature_set_by_chat
+        return jsonify(resp)
     except Exception as e:
         msg = str(e)
         return jsonify({'success': False, 'error': msg}), 500

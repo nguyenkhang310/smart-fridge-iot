@@ -644,52 +644,78 @@
         .system-status {
             display: flex;
             flex-wrap: wrap;
-            gap: 12px 24px;
+            gap: 8px 16px;
             align-items: center;
             justify-content: space-between;
-            padding: 12px 18px;
-            border-radius: 10px;
-            background: #eff6ff;
-            border: 1px solid #dbeafe;
-            margin-bottom: 24px;
+            padding: 10px 16px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, rgba(239,246,255,0.95) 0%, rgba(219,234,254,0.7) 100%);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(147,197,253,0.5);
+            box-shadow: 0 2px 8px rgba(37,99,235,0.06);
+            margin-bottom: 20px;
         }
 
         .system-status-group {
             display: flex;
             flex-wrap: wrap;
-            gap: 12px 18px;
+            gap: 6px 4px;
             align-items: center;
         }
 
+        /* Each status badge — unified height */
         .system-status-item {
-            display: flex;
+            display: inline-flex;
             align-items: center;
             gap: 6px;
-            font-size: 0.9em;
-            color: #1f2933;
+            height: 30px;
+            padding: 0 12px;
+            border-radius: 999px;
+            font-size: 0.85em;
+            line-height: 1;
+            background: rgba(255,255,255,0.75);
+            border: 1px solid rgba(196,220,255,0.7);
+            box-shadow: 0 1px 3px rgba(37,99,235,0.07);
+            transition: box-shadow 0.2s;
+            white-space: nowrap;
         }
 
-        /* Control mode toggle */
+        .system-status-item:hover {
+            box-shadow: 0 2px 8px rgba(37,99,235,0.15);
+        }
+
+        /* Thin vertical divider between left badge group items */
+        .system-status-group:first-child .system-status-item + .system-status-item {
+            margin-left: 2px;
+        }
+
+        /* Control mode toggle — same height as badges */
         .mode-toggle {
-            display: flex;
+            display: inline-flex;
             align-items: center;
-            gap: 10px;
-            padding: 8px 10px;
-            border-radius: 10px;
-            background: rgba(255,255,255,0.6);
-            border: 1px solid rgba(219,234,254,0.9);
+            gap: 7px;
+            height: 30px;
+            padding: 0 12px;
+            border-radius: 999px;
+            font-size: 0.85em;
+            line-height: 1;
+            background: rgba(255,255,255,0.75);
+            border: 1px solid rgba(196,220,255,0.7);
+            box-shadow: 0 1px 3px rgba(37,99,235,0.07);
         }
 
         .mode-toggle-label {
-            font-weight: 700;
-            color: #1d4ed8;
+            font-size: 0.85em;
+            font-weight: 600;
+            color: #475569;
         }
 
         .switch {
             position: relative;
             display: inline-block;
-            width: 52px;
-            height: 28px;
+            width: 38px;
+            height: 20px;
+            flex-shrink: 0;
         }
 
         .switch input {
@@ -713,14 +739,14 @@
         .switch-slider:before {
             position: absolute;
             content: "";
-            height: 22px;
-            width: 22px;
+            height: 14px;
+            width: 14px;
             left: 3px;
             bottom: 3px;
             background-color: white;
             transition: 0.2s;
             border-radius: 999px;
-            box-shadow: 0 2px 6px rgba(15, 23, 42, 0.25);
+            box-shadow: 0 2px 4px rgba(15, 23, 42, 0.25);
         }
 
         .switch input:checked + .switch-slider {
@@ -728,16 +754,17 @@
         }
 
         .switch input:checked + .switch-slider:before {
-            transform: translateX(24px);
+            transform: translateX(18px);
         }
 
         .mode-pill {
             display: inline-flex;
             align-items: center;
-            padding: 3px 10px;
+            padding: 2px 9px;
             border-radius: 999px;
             font-size: 0.85em;
             font-weight: 700;
+            letter-spacing: 0.3px;
             border: 1px solid rgba(59,130,246,0.35);
             color: #1d4ed8;
             background: rgba(219,234,254,0.7);
@@ -751,34 +778,35 @@
 
         .system-status-label {
             font-weight: 600;
-            color: #1d4ed8;
+            color: #334155;
         }
 
         .system-status-value {
             font-weight: 500;
-            color: #4b5563;
+            color: #64748b;
         }
 
         .status-dot {
-            width: 10px;
-            height: 10px;
+            width: 9px;
+            height: 9px;
             border-radius: 999px;
+            flex-shrink: 0;
             background: #d1d5db;
         }
 
         .status-dot--ok {
             background: #16a34a;
-            box-shadow: 0 0 8px rgba(22,163,74,0.7);
+            box-shadow: 0 0 6px rgba(22,163,74,0.8);
         }
 
         .status-dot--warn {
             background: #f59e0b;
-            box-shadow: 0 0 8px rgba(245,158,11,0.7);
+            box-shadow: 0 0 6px rgba(245,158,11,0.8);
         }
 
         .status-dot--error {
             background: #dc2626;
-            box-shadow: 0 0 8px rgba(220,38,38,0.7);
+            box-shadow: 0 0 6px rgba(220,38,38,0.8);
         }
 
         .status-dot--off {
@@ -786,7 +814,13 @@
         }
 
         .status-dot--unknown {
-            background: #e5e7eb;
+            background: #cbd5e1;
+            animation: pulse-unknown 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-unknown {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
         }
 
         /* Toast notifications */
@@ -1434,7 +1468,7 @@
                 <div class="system-status-item">
                     <span class="status-dot status-dot--unknown" id="statusApiDot"></span>
                     <span class="system-status-label">API</span>
-                    <span class="system-status-value" id="statusApiText">Đang kiểm tra...</span>
+                    <span class="system-status-value" id="statusApiText">Đang kiểm tra…</span>
                 </div>
                 <div class="system-status-item">
                     <span class="status-dot status-dot--unknown" id="statusFirebaseDot"></span>
@@ -1444,7 +1478,7 @@
                 <div class="system-status-item">
                     <span class="status-dot status-dot--unknown" id="statusDbDot"></span>
                     <span class="system-status-label">Database</span>
-                    <span class="system-status-value" id="statusDbText">Chưa xác định</span>
+                    <span class="system-status-value" id="statusDbText">Đang kiểm tra…</span>
                 </div>
                 <div class="system-status-item">
                     <span class="status-dot status-dot--unknown" id="statusCameraDot"></span>
@@ -1454,10 +1488,11 @@
             </div>
             <div class="system-status-group" style="justify-content: flex-end;">
                 <div class="system-status-item">
-                    <span class="system-status-label">Lần cập nhật cảm biến:</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    <span class="system-status-label">Cập nhật:</span>
                     <span class="system-status-value" id="statusLastUpdate">--</span>
                 </div>
-                <div class="mode-toggle" title="Gạt để chuyển chế độ điều khiển: Phần mềm (Wokwi) / Phần cứng (để sẵn)">
+                <div class="mode-toggle" title="Gạt để chuyển chế độ điều khiển: Phần mềm (Wokwi) / Phần cứng">
                     <span class="mode-toggle-label">Chế độ:</span>
                     <span class="mode-pill" id="modePill">PHẦN MỀM</span>
                     <label class="switch" aria-label="Chuyển chế độ điều khiển">
@@ -1760,8 +1795,10 @@
         let liveCameraMode = null;
 
         // Update temperature slider value
+        let lastSliderUserInteraction = 0;
         document.getElementById('tempSlider').addEventListener('input', function(e) {
             document.getElementById('targetTemp').textContent = e.target.value;
+            lastSliderUserInteraction = Date.now();
         });
 
         // Real-time sensor data update using Server-Sent Events (SSE)
@@ -1783,15 +1820,21 @@
             const targetVal = data.target_temperature;
             if (targetVal !== undefined && targetVal !== null) {
                 const t = parseFloat(targetVal);
-                const targetStr = t % 1 === 0 ? String(Math.round(t)) : t.toFixed(1);
-                const te = document.getElementById('temperatureTarget');
-                const oe = document.getElementById('oledTargetTemp');
-                const te2 = document.getElementById('targetTemp');
                 const sl = document.getElementById('tempSlider');
-                if (te) te.textContent = targetStr;
-                if (oe) oe.textContent = targetStr;
-                if (te2) te2.textContent = targetStr;
-                if (sl) sl.value = targetVal;
+                const currentSliderVal = sl ? parseFloat(sl.value) : null;
+                const recentlyEdited = (Date.now() - lastSliderUserInteraction) < 8000;
+                // Chỉ bỏ qua ghi đè khi user VỪA chỉnh slider (5s) và khác server; còn chatbot/API thay đổi thì vẫn cập nhật
+                const skipOverwrite = recentlyEdited && currentSliderVal !== null && Math.abs(currentSliderVal - t) > 0.01;
+                if (!skipOverwrite) {
+                    const targetStr = t % 1 === 0 ? String(Math.round(t)) : t.toFixed(1);
+                    const te = document.getElementById('temperatureTarget');
+                    const oe = document.getElementById('oledTargetTemp');
+                    const te2 = document.getElementById('targetTemp');
+                    if (te) te.textContent = targetStr;
+                    if (oe) oe.textContent = targetStr;
+                    if (te2) te2.textContent = targetStr;
+                    if (sl) sl.value = targetVal;
+                }
             }
             
             // Update progress bars
@@ -1836,7 +1879,7 @@
                         firebaseDot.classList.add('status-dot--ok');
                     }
                     if (firebaseText) {
-                        firebaseText.textContent = 'Đang nhận dữ liệu (Wokwi)';
+                        firebaseText.textContent = 'Đang nhận dữ liệu';
                     }
                 } else {
                     if (firebaseDot && firebaseDot.classList.contains('status-dot--unknown')) {
@@ -2516,6 +2559,23 @@ startSensorStream();
                     '<span class="status-indicator status-offline"></span>Mode giả lập (API không khả dụng)';
                 setSystemStatus('statusApi', 'error', 'Không kết nối được');
             }
+
+            // Check database status from /api/stats
+            try {
+                const statsRes = await fetch('/api/stats');
+                if (statsRes.ok) {
+                    const stats = await statsRes.json();
+                    if (stats.database_enabled === true) {
+                        setSystemStatus('statusDb', 'ok', 'Kết nối');
+                    } else {
+                        setSystemStatus('statusDb', 'off', 'Không dùng DB');
+                    }
+                } else {
+                    setSystemStatus('statusDb', 'warn', 'Lỗi kiểm tra');
+                }
+            } catch (e) {
+                setSystemStatus('statusDb', 'error', 'Không phản hồi');
+            }
         }
         
         checkAPIConnection();
@@ -2771,6 +2831,20 @@ startSensorStream();
                 
                 if (data && data.success) {
                     appendChat('assistant', data.reply || 'OK');
+                    if (data.target_temperature != null) {
+                        const t = parseFloat(data.target_temperature);
+                        const clamped = Math.max(-2, Math.min(33, t));
+                        const sl = document.getElementById('tempSlider');
+                        const te = document.getElementById('temperatureTarget');
+                        const oe = document.getElementById('oledTargetTemp');
+                        const te2 = document.getElementById('targetTemp');
+                        const targetStr = clamped % 1 === 0 ? String(Math.round(clamped)) : clamped.toFixed(1);
+                        if (sl) sl.value = clamped;
+                        if (te) te.textContent = targetStr;
+                        if (oe) oe.textContent = targetStr;
+                        if (te2) te2.textContent = targetStr;
+                        lastSliderUserInteraction = 0;
+                    }
                 } else {
                     throw new Error(data.error || 'Chat failed');
                 }
