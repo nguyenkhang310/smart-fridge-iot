@@ -1377,6 +1377,19 @@
             color: white;
             box-shadow: 0 4px 12px rgba(22, 163, 74, 0.2);
         }
+
+        /* ===== Door Status – compact status bar ===== */
+        @keyframes doorDotPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.5); }
+            50%       { box-shadow: 0 0 0 5px rgba(239,68,68,0); }
+        }
+        .status-dot--door-open {
+            background: #ef4444 !important;
+            animation: doorDotPulse 1.2s ease-in-out infinite;
+        }
+        .status-dot--door-closed {
+            background: #22c55e !important;
+        }
     </style>
 </head>
 <body>
@@ -1485,6 +1498,11 @@
                     <span class="system-status-label">Camera</span>
                     <span class="system-status-value" id="statusCameraText">Chưa kiểm tra</span>
                 </div>
+                <div class="system-status-item">
+                    <span class="status-dot status-dot--door-closed" id="statusDoorDot"></span>
+                    <span class="system-status-label">Cửa tủ</span>
+                    <span class="system-status-value" id="statusDoorText">Đóng</span>
+                </div>
             </div>
             <div class="system-status-group" style="justify-content: flex-end;">
                 <div class="system-status-item">
@@ -1530,6 +1548,9 @@
                 <div class="alert alert-warning" id="tempAlert">
                     Nhiệt độ cao hơn mức khuyến nghị!
                 </div>
+                <div class="alert alert-warning" id="doorAlert" style="display:none; margin-top: 12px;">
+                    Cửa tủ đang mở quá lâu! Vui lòng đóng cửa để tránh thất thoát hơi lạnh.
+                </div>
             </div>
 
             <!-- Humidity Card -->
@@ -1552,6 +1573,7 @@
                     <div class="progress-fill" id="humidityProgress" style="width: 65%">65%</div>
                 </div>
             </div>
+
 
             <!-- Temperature Control Card -->
             <div class="card">
@@ -1604,6 +1626,7 @@
                     <div class="oled-line">Temp: <span id="oledTemp">4.5</span>°C</div>
                     <div class="oled-line">Humidity: <span id="oledHumidity">65</span>%</div>
                     <div class="oled-line">Target: <span id="oledTargetTemp">4</span>°C</div>
+                    <div class="oled-line">Door: <span id="oledDoor">DONG</span></div>
                     <div class="oled-line">Status: <span id="oledStatus">NORMAL</span></div>
                     <div class="oled-line">──────────────────────</div>
                     <div class="oled-line">Items: <span id="oledItems">12</span> | Fruits: <span id="oledFruits">8</span></div>
@@ -1771,6 +1794,7 @@
             <div class="quick-replies" id="quickReplies">
                 <button class="quick-reply-btn" onclick="document.getElementById('chatInput').value='Trong tủ có gì?'; sendChat();">Trong tủ có đồ gì?</button>
                 <button class="quick-reply-btn" onclick="document.getElementById('chatInput').value='Nhiệt độ hiện tại?'; sendChat();">Nhiệt độ hiện tại?</button>
+                <button class="quick-reply-btn" onclick="document.getElementById('chatInput').value='Cửa tủ đang mở hay đóng?'; sendChat();">Cửa tủ?</button>
                 <button class="quick-reply-btn" onclick="document.getElementById('chatInput').value='Giảm nhiệt độ xuống 4 độ'; sendChat();">Chỉnh 4°C</button>
             </div>
 
@@ -1793,6 +1817,8 @@
         let detectedObjects = [];
         let liveCameraActive = false;
         let liveCameraMode = null;
+            let doorAlertThresholdSecs = 30;
+            let _doorTooLongToastSent = false;
 
         // Update temperature slider value
         let lastSliderUserInteraction = 0;
@@ -1848,6 +1874,10 @@
             // Temperature alert + OLED status
             const oledStatusEl = document.getElementById('oledStatus');
             const tempAlertEl = document.getElementById('tempAlert');
+            if (data && data.door_open_alert_seconds != null) {
+                const v = parseInt(data.door_open_alert_seconds, 10);
+                if (!Number.isNaN(v) && v > 0) doorAlertThresholdSecs = v;
+            }
             if (parseFloat(temp) > 6) {
                 if (tempAlertEl) tempAlertEl.style.display = 'block';
                 if (oledStatusEl) oledStatusEl.textContent = 'WARNING';
@@ -1892,7 +1922,59 @@
                 }
             }
         }
-        
+
+        // --- Door Status real-time update ---
+        let _doorOpenSince = null;
+        let _doorOpenTimer = null;
+
+        function updateDoorStatus(doorState) {
+            const isOpen = (doorState === 1 || doorState === true || doorState === '1');
+
+            const dot      = document.getElementById('statusDoorDot');
+            const text     = document.getElementById('statusDoorText');
+            const oledDoor = document.getElementById('oledDoor');
+            const doorAlertEl = document.getElementById('doorAlert');
+
+            if (!dot) return;
+
+            if (isOpen) {
+                dot.className = 'status-dot status-dot--door-open';
+                if (text)     text.textContent = 'Mở';
+                if (oledDoor) oledDoor.textContent = 'MO';
+
+                // Start elapsed-time counter
+                if (!_doorOpenSince) {
+                    _doorOpenSince = Date.now();
+                    _doorTooLongToastSent = false;
+                    _doorOpenTimer = setInterval(() => {
+                        const secs = Math.floor((Date.now() - _doorOpenSince) / 1000);
+                        const mm = String(Math.floor(secs / 60)).padStart(2, '0');
+                        const ss = String(secs % 60).padStart(2, '0');
+                        if (text) text.textContent = `Mở ${mm}:${ss}`;
+
+                        const tooLong = secs >= doorAlertThresholdSecs;
+                        if (doorAlertEl) doorAlertEl.style.display = tooLong ? 'block' : 'none';
+                        if (tooLong && !_doorTooLongToastSent && typeof showToast === 'function') {
+                            showToast(`Cửa tủ mở quá lâu (>${doorAlertThresholdSecs}s).`, 'error');
+                            _doorTooLongToastSent = true;
+                        }
+                    }, 1000);
+                }
+            } else {
+                dot.className = 'status-dot status-dot--door-closed';
+                if (text)     text.textContent = 'Đóng';
+                if (oledDoor) oledDoor.textContent = 'DONG';
+                if (doorAlertEl) doorAlertEl.style.display = 'none';
+                _doorTooLongToastSent = false;
+
+                if (_doorOpenTimer) {
+                    clearInterval(_doorOpenTimer);
+                    _doorOpenTimer = null;
+                }
+                _doorOpenSince = null;
+            }
+        }
+
         // Fetch sensor data from API (Firebase/Wokwi) - Fallback method
         async function updateSensorData() {
             try {
@@ -1933,9 +2015,9 @@
                         const data = JSON.parse(event.data);
                         updateSensorDisplay(data);
                         
-                if (data.source === 'firebase_wokwi') {
+                if (data.source === 'firebase_wokwi' || data.door_state !== undefined) {
                             if (data.door_state !== undefined) {
-                                console.log(`Door: ${data.door_state === 1 ? 'Mở' : 'Đóng'}`);
+                                updateDoorStatus(data.door_state);
                             }
                             if (data.pwm !== undefined) {
                                 console.log(`PWM Làm lạnh: ${data.pwm}/255`);

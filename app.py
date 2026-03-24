@@ -52,6 +52,10 @@ CLASSIFICATION_MODEL_PATH = 'models/fruit_classification.pt'  # Model để phâ
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs('models', exist_ok=True)
 
+# Door open-too-long alert (dashboard)
+# Hard-coded for simplicity (seconds)
+DOOR_OPEN_ALERT_SECONDS = 30
+
 # Control mode (software=Wokwi/Firebase, hardware=real device)
 CONTROL_MODE_FILE = os.path.join(os.path.dirname(__file__), 'data', 'control_mode.json')
 _control_mode_lock = threading.Lock()
@@ -1371,6 +1375,16 @@ def api_chat():
                 f"Mục tiêu đang đặt: {s.get('target_temperature')}°C"
             )
 
+        # Ý định: Hỏi cửa tủ đang đóng/mở
+        if reply is None and any(k in text for k in ['cửa', 'cua', 'door']):
+            s = _tool_get_sensors()
+            door_state = s.get('door_state')
+            is_open = (door_state == 1 or door_state is True or str(door_state) == '1')
+            if is_open:
+                reply = "Cửa tủ hiện đang MỞ."
+            else:
+                reply = "Cửa tủ hiện đang ĐÓNG."
+
         # Ý định: Hỏi trong tủ có gì, trái cây
         if reply is None and any(k in text for k in ['trong tủ', 'trong tu', 'có gì', 'trái cây', 'trai cay', 'táo', 'chuối', 'cam', 'hỏng', 'hư', 'bao nhiêu']):
             inv = _tool_get_inventory()
@@ -1460,7 +1474,9 @@ def get_sensors():
         except Exception as e:
             print(f"⚠ Error saving sensor to database: {e}")
     
-    return jsonify(sensor_data)
+    payload = dict(sensor_data)
+    payload['door_open_alert_seconds'] = DOOR_OPEN_ALERT_SECONDS
+    return jsonify(payload)
 
 @app.route('/api/temperature', methods=['POST'])
 def set_temperature():
@@ -2369,8 +2385,10 @@ def stream_sensors():
         
         # Send initial data immediately from cache
         if firebase_latest_data:
-            yield f"data: {json.dumps(firebase_latest_data)}\n\n"
-            last_timestamp = firebase_latest_data.get('timestamp')
+            initial = dict(firebase_latest_data)
+            initial['door_open_alert_seconds'] = DOOR_OPEN_ALERT_SECONDS
+            yield f"data: {json.dumps(initial)}\n\n"
+            last_timestamp = initial.get('timestamp')
         
         # Listen for updates from background thread
         while True:
@@ -2379,13 +2397,17 @@ def stream_sensors():
                 try:
                     new_data = firebase_update_queue.get(timeout=0.1)
                     if new_data and new_data.get('timestamp') != last_timestamp:
-                        last_timestamp = new_data.get('timestamp')
-                        yield f"data: {json.dumps(new_data)}\n\n"
+                        enriched = dict(new_data)
+                        enriched['door_open_alert_seconds'] = DOOR_OPEN_ALERT_SECONDS
+                        last_timestamp = enriched.get('timestamp')
+                        yield f"data: {json.dumps(enriched)}\n\n"
                 except:
                     # Queue empty, check cache directly
                     if firebase_latest_data and firebase_latest_data.get('timestamp') != last_timestamp:
-                        last_timestamp = firebase_latest_data.get('timestamp')
-                        yield f"data: {json.dumps(firebase_latest_data)}\n\n"
+                        enriched = dict(firebase_latest_data)
+                        enriched['door_open_alert_seconds'] = DOOR_OPEN_ALERT_SECONDS
+                        last_timestamp = enriched.get('timestamp')
+                        yield f"data: {json.dumps(enriched)}\n\n"
                     time.sleep(0.1)  # Small delay khi không có dữ liệu mới
                     
             except Exception as e:
@@ -2462,7 +2484,7 @@ if __name__ == '__main__':
         firebase_update_thread = threading.Thread(target=firebase_update_worker, daemon=True)
         firebase_update_thread.start()
         print("✓ Sensor real-time update thread started")
-    
+
     # Cleanup on exit
     import atexit
     def cleanup():
