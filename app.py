@@ -512,6 +512,7 @@ try:
         init_firebase, get_latest_sensor_data, get_sensor_history as get_firebase_sensor_history,
         set_light_control, set_peltier_control, set_target_temperature as set_firebase_target_temp,
         get_control_status as get_firebase_control_status, set_current_inventory as set_firebase_inventory,
+        get_current_inventory as get_firebase_current_inventory,
         get_camera_ip as get_firebase_camera_ip
     )
     FIREBASE_AVAILABLE = True
@@ -523,6 +524,7 @@ try:
 except ImportError as e:
     FIREBASE_AVAILABLE = False
     set_firebase_inventory = None
+    get_firebase_current_inventory = None
     get_firebase_camera_ip = None
     print(f"⚠ firebase_integration.py not found - Firebase features disabled: {e}")
 
@@ -732,6 +734,43 @@ def _sync_inventory_to_firebase(force: bool = False):
             _last_inventory_sync_ts = now
     except Exception as e:
         print(f"⚠ Inventory firebase sync error: {e}")
+
+
+def _inventory_counts_snapshot():
+    """
+    Lấy snapshot thống kê inventory ưu tiên đồng bộ:
+    - Local memory (từ detection realtime)
+    - Nếu có Firebase Current/Inventory thì dùng làm nguồn đồng bộ cuối cùng
+      để tránh lệch giữa dashboard/OLED/Firebase.
+    """
+    local_total = int(inventory.get('total_items', 0))
+    local_fruits = int(len(inventory.get('fruits', [])))
+    local_foods = int(len(inventory.get('foods', [])))
+    local_others = int(len(inventory.get('other', [])))
+
+    if FIREBASE_AVAILABLE and get_firebase_current_inventory:
+        try:
+            fb_inv = get_firebase_current_inventory()
+            if fb_inv:
+                total = int(fb_inv.get('total_items', local_total))
+                fruits = int(fb_inv.get('fruit_count', local_fruits))
+                foods = int(fb_inv.get('food_count', local_foods))
+                others = int(fb_inv.get('other_count', local_others))
+                return {
+                    'total_items': max(0, total),
+                    'fruit_count': max(0, fruits),
+                    'food_count': max(0, foods),
+                    'other_count': max(0, others),
+                }
+        except Exception:
+            pass
+
+    return {
+        'total_items': local_total,
+        'fruit_count': local_fruits,
+        'food_count': local_foods,
+        'other_count': local_others,
+    }
 
 def reset_inventory():
     """Đưa số lượng vật phẩm về 0 (dùng khi tắt camera / xóa ảnh)."""
@@ -1697,12 +1736,13 @@ def set_temperature():
 @app.route('/api/oled', methods=['GET'])
 def get_oled_data():
     """Get data to display on OLED screen"""
+    counts = _inventory_counts_snapshot()
     oled_info = {
         'temperature': sensor_data['temperature'],
         'humidity': sensor_data['humidity'],
         'status': sensor_data['status'],
-        'total_items': inventory['total_items'],
-        'fruit_count': len(inventory['fruits']),
+        'total_items': counts['total_items'],
+        'fruit_count': counts['fruit_count'],
         'time': datetime.now().strftime('%H:%M:%S')
     }
     return jsonify(oled_info)
@@ -2209,11 +2249,12 @@ def camera_status():
 @app.route('/api/inventory', methods=['GET'])
 def get_inventory():
     """Get current inventory status"""
+    counts = _inventory_counts_snapshot()
     return jsonify({
-        'total_items': inventory['total_items'],
-        'fruit_count': len(inventory['fruits']),
-        'food_count': len(inventory['foods']),
-        'other_count': len(inventory['other']),
+        'total_items': counts['total_items'],
+        'fruit_count': counts['fruit_count'],
+        'food_count': counts['food_count'],
+        'other_count': counts['other_count'],
         'fruits': inventory['fruits'],
         'foods': inventory['foods'],
         'other': inventory['other'],

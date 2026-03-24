@@ -345,6 +345,68 @@ def get_control_status() -> Dict:
         return {'light': 0, 'peltier': 0}
 
 
+def get_current_inventory() -> Optional[Dict]:
+    """
+    Đọc tồn kho realtime từ Firebase.
+    Ưu tiên /Current/Inventory, fallback về các key rời rạc.
+    """
+    try:
+        if not firebase_initialized:
+            return None
+
+        # 1) Preferred: object tổng hợp
+        url_inv = f"{FIREBASE_DATABASE_URL}/Current/Inventory.json?auth={FIREBASE_AUTH_TOKEN}"
+        try:
+            resp = session.get(url_inv, timeout=5, verify=True)
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, dict):
+                    total = int(data.get('total_items', 0) or 0)
+                    fruits = int(data.get('fruit_count', 0) or 0)
+                    foods = int(data.get('food_count', 0) or 0)
+                    others = int(data.get('other_count', 0) or 0)
+                    return {
+                        'total_items': max(0, total),
+                        'fruit_count': max(0, fruits),
+                        'food_count': max(0, foods),
+                        'other_count': max(0, others),
+                    }
+        except Exception:
+            pass
+
+        # 2) Fallback: key rời
+        def _read_key(key: str):
+            url = f"{FIREBASE_DATABASE_URL}/Current/{quote(key)}.json?auth={FIREBASE_AUTH_TOKEN}"
+            r = session.get(url, timeout=5, verify=True)
+            if r.status_code != 200:
+                return None
+            return r.json()
+
+        items = _read_key('Items')
+        if items is None:
+            items = _read_key('Count')
+        fruits = _read_key('Fruits')
+        foods = _read_key('Foods')
+        others = _read_key('Others')
+
+        if items is None and fruits is None and foods is None and others is None:
+            return None
+
+        total = int(items or 0)
+        fruit_count = int(fruits or 0)
+        food_count = int(foods or 0)
+        other_count = int(others or 0)
+        return {
+            'total_items': max(0, total),
+            'fruit_count': max(0, fruit_count),
+            'food_count': max(0, food_count),
+            'other_count': max(0, other_count),
+        }
+    except Exception as e:
+        print(f"⚠ Error reading current inventory from Firebase: {e}")
+        return None
+
+
 def set_current_inventory(total_items: int, fruit_count: int, food_count: int, other_count: int) -> bool:
     """
     Đồng bộ số lượng vật phẩm hiện tại lên Firebase để ESP32/OLED có thể đọc realtime.
@@ -362,6 +424,7 @@ def set_current_inventory(total_items: int, fruit_count: int, food_count: int, o
         other_count = max(0, int(other_count))
 
         payloads = [
+            (f"{FIREBASE_DATABASE_URL}/Current/Count.json?auth={FIREBASE_AUTH_TOKEN}", total_items),
             (f"{FIREBASE_DATABASE_URL}/Current/Items.json?auth={FIREBASE_AUTH_TOKEN}", total_items),
             (f"{FIREBASE_DATABASE_URL}/Current/Fruits.json?auth={FIREBASE_AUTH_TOKEN}", fruit_count),
             (f"{FIREBASE_DATABASE_URL}/Current/Foods.json?auth={FIREBASE_AUTH_TOKEN}", food_count),
