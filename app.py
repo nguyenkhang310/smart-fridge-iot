@@ -54,7 +54,8 @@ os.makedirs('models', exist_ok=True)
 
 # Door open-too-long alert (dashboard)
 # Hard-coded for simplicity (seconds)
-DOOR_OPEN_ALERT_SECONDS = 30
+DOOR_OPEN_ALERT_SECONDS = 60
+DOOR_OPEN_ALERT_COOLDOWN_SECONDS = 300
 
 # Control mode (software=Wokwi/Firebase, hardware=real device)
 CONTROL_MODE_FILE = os.path.join(os.path.dirname(__file__), 'data', 'control_mode.json')
@@ -577,6 +578,12 @@ sensor_data = {
     'status': 'normal',
     'last_update': datetime.now().isoformat()
 }
+
+# Door monitoring state (for Telegram alert sync with dashboard condition)
+_door_monitor_running = False
+_door_monitor_thread = None
+_door_open_since = None
+_door_alerted_this_open = False
 
 def _parse_firebase_sensor_payload(fb_data):
     """Chuẩn hóa dict từ get_latest_sensor_data() (temperature/humidity/...) hoặc key gốc (Temp/Humi/...)."""
@@ -1441,6 +1448,75 @@ def api_chat():
         msg = str(e)
         return jsonify({'success': False, 'error': msg}), 500
 
+
+def _door_monitor_worker():
+    """Background worker: gửi Telegram khi cửa mở quá lâu."""
+    global _door_monitor_running, _door_open_since, _door_alerted_this_open
+    import time
+
+    while _door_monitor_running:
+        try:
+            state = None
+            if firebase_latest_data and isinstance(firebase_latest_data, dict):
+                state = firebase_latest_data.get('door_state')
+            if state is None:
+                state = sensor_data.get('door_state', 0)
+
+            is_open = (state == 1 or state is True or str(state) == '1')
+            if is_open:
+                if _door_open_since is None:
+                    _door_open_since = datetime.now()
+                    _door_alerted_this_open = False
+
+                elapsed = int((datetime.now() - _door_open_since).total_seconds())
+                if (not _door_alerted_this_open) and elapsed >= DOOR_OPEN_ALERT_SECONDS:
+                    if can_send('door_open_too_long', cooldown=DOOR_OPEN_ALERT_COOLDOWN_SECONDS):
+                        msg = (
+                            "🚪⚠ <b>CẢNH BÁO CỬA MỞ QUÁ LÂU</b>\n\n"
+                            f"- Trạng thái: <b>Đang mở</b>\n"
+                            f"- Thời gian mở: <b>{elapsed} giây</b>\n"
+                            f"- Ngưỡng: <b>{DOOR_OPEN_ALERT_SECONDS} giây</b>\n\n"
+                            "Vui lòng đóng cửa tủ."
+                        )
+                        threading.Thread(target=send_text, args=(msg,), daemon=True).start()
+                    _door_alerted_this_open = True
+            else:
+                _door_open_since = None
+                _door_alerted_this_open = False
+        except Exception as e:
+            print(f"⚠ Door monitor error: {e}")
+
+        time.sleep(0.5)
+
+
+def _door_metrics_snapshot(door_state):
+    """Build synchronized door-open metrics for dashboard/Telegram consistency."""
+    is_open = (door_state == 1 or door_state is True or str(door_state) == '1')
+    open_seconds = 0
+    too_long = False
+    if is_open and _door_open_since is not None:
+        try:
+            open_seconds = max(0, int((datetime.now() - _door_open_since).total_seconds()))
+        except Exception:
+            open_seconds = 0
+    if is_open and open_seconds >= DOOR_OPEN_ALERT_SECONDS:
+        too_long = True
+    return {
+        'door_open_seconds': open_seconds,
+        'door_open_too_long': too_long,
+    }
+
+
+def _enrich_with_door_metrics(payload: dict) -> dict:
+    """Attach door-open metrics to outgoing sensor payload."""
+    data = dict(payload or {})
+    door_state = data.get('door_state')
+    if door_state is None:
+        door_state = sensor_data.get('door_state', 0)
+    data.update(_door_metrics_snapshot(door_state))
+    return data
+
+
 @app.route('/api/sensors', methods=['GET'])
 def get_sensors():
     """Get current sensor readings — nguồn phụ thuộc control mode (hardware vs software)."""
@@ -1480,7 +1556,7 @@ def get_sensors():
         except Exception as e:
             print(f"⚠ Error saving sensor to database: {e}")
     
-    payload = dict(sensor_data)
+    payload = _enrich_with_door_metrics(sensor_data)
     payload['door_open_alert_seconds'] = DOOR_OPEN_ALERT_SECONDS
     return jsonify(payload)
 
@@ -1627,7 +1703,7 @@ def detect_objects():
     DETECT_TIMEOUT = 90
 
     def _run_detection():
-        nonlocal has_rotten
+        nonlocal has_rotten, img
         if model_detect is not None:
             img = preprocess_image(img)
         # Use advanced 2-stage detection if available, otherwise fallback
@@ -2391,7 +2467,7 @@ def stream_sensors():
         
         # Send initial data immediately from cache
         if firebase_latest_data:
-            initial = dict(firebase_latest_data)
+            initial = _enrich_with_door_metrics(firebase_latest_data)
             initial['door_open_alert_seconds'] = DOOR_OPEN_ALERT_SECONDS
             yield f"data: {json.dumps(initial)}\n\n"
             last_timestamp = initial.get('timestamp')
@@ -2403,14 +2479,14 @@ def stream_sensors():
                 try:
                     new_data = firebase_update_queue.get(timeout=0.1)
                     if new_data and new_data.get('timestamp') != last_timestamp:
-                        enriched = dict(new_data)
+                        enriched = _enrich_with_door_metrics(new_data)
                         enriched['door_open_alert_seconds'] = DOOR_OPEN_ALERT_SECONDS
                         last_timestamp = enriched.get('timestamp')
                         yield f"data: {json.dumps(enriched)}\n\n"
                 except:
                     # Queue empty, check cache directly
                     if firebase_latest_data and firebase_latest_data.get('timestamp') != last_timestamp:
-                        enriched = dict(firebase_latest_data)
+                        enriched = _enrich_with_door_metrics(firebase_latest_data)
                         enriched['door_open_alert_seconds'] = DOOR_OPEN_ALERT_SECONDS
                         last_timestamp = enriched.get('timestamp')
                         yield f"data: {json.dumps(enriched)}\n\n"
@@ -2491,12 +2567,19 @@ if __name__ == '__main__':
         firebase_update_thread.start()
         print("✓ Sensor real-time update thread started")
 
+    # Start door monitor thread (Telegram alert sync with dashboard rule)
+    _door_monitor_running = True
+    _door_monitor_thread = threading.Thread(target=_door_monitor_worker, daemon=True, name="DoorMonitor")
+    _door_monitor_thread.start()
+    print(f"✓ Door monitor thread started (threshold={DOOR_OPEN_ALERT_SECONDS}s)")
+
     # Cleanup on exit
     import atexit
     def cleanup():
-        global camera_stream, stream_active, firebase_update_running
+        global camera_stream, stream_active, firebase_update_running, _door_monitor_running
         stream_active = False
         firebase_update_running = False
+        _door_monitor_running = False
         if camera_stream is not None:
             camera_stream.release()
         if HARDWARE_AVAILABLE:

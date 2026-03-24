@@ -784,6 +784,7 @@
         .system-status-value {
             font-weight: 500;
             color: #64748b;
+            font-variant-numeric: tabular-nums;
         }
 
         .status-dot {
@@ -1549,7 +1550,7 @@
                     Nhiệt độ cao hơn mức khuyến nghị!
                 </div>
                 <div class="alert alert-warning" id="doorAlert" style="display:none; margin-top: 12px;">
-                    Cửa tủ đang mở quá lâu! Vui lòng đóng cửa để tránh thất thoát hơi lạnh.
+                    Cửa mở quá lâu.
                 </div>
             </div>
 
@@ -1677,7 +1678,7 @@
                 </svg>
             </span>
             <div style="flex: 1;">
-                <div class="card-title">Camera & Nhận Diện AI (YOLO)</div>
+                <div class="card-title">Camera & Nhận Diện AI</div>
                 <small id="detectionMode" style="color: #3b82f6;">
                     <span class="status-indicator status-online"></span>Camera sẵn sàng
                 </small>
@@ -1819,6 +1820,8 @@
         let liveCameraMode = null;
             let doorAlertThresholdSecs = 30;
             let _doorTooLongToastSent = false;
+            let sensorPollingInterval = null;
+            let inventoryPollingInterval = null;
 
         // Update temperature slider value
         let lastSliderUserInteraction = 0;
@@ -1927,7 +1930,7 @@
         let _doorOpenSince = null;
         let _doorOpenTimer = null;
 
-        function updateDoorStatus(doorState) {
+        function updateDoorStatus(doorState, serverOpenSeconds = null, serverTooLong = null) {
             const isOpen = (doorState === 1 || doorState === true || doorState === '1');
 
             const dot      = document.getElementById('statusDoorDot');
@@ -1944,21 +1947,24 @@
 
                 // Start elapsed-time counter
                 if (!_doorOpenSince) {
-                    _doorOpenSince = Date.now();
+                    const seedSecs = Number.isFinite(Number(serverOpenSeconds)) ? Number(serverOpenSeconds) : 0;
+                    _doorOpenSince = Date.now() - Math.max(0, seedSecs) * 1000;
                     _doorTooLongToastSent = false;
                     _doorOpenTimer = setInterval(() => {
                         const secs = Math.floor((Date.now() - _doorOpenSince) / 1000);
-                        const mm = String(Math.floor(secs / 60)).padStart(2, '0');
-                        const ss = String(secs % 60).padStart(2, '0');
-                        if (text) text.textContent = `Mở ${mm}:${ss}`;
+                        // Giữ hiển thị trạng thái đơn giản: chỉ "Mở"/"Đóng"
+                        if (text) text.textContent = 'Mở';
 
-                        const tooLong = secs >= doorAlertThresholdSecs;
+                        const tooLong = (serverTooLong === true) || (secs >= doorAlertThresholdSecs);
                         if (doorAlertEl) doorAlertEl.style.display = tooLong ? 'block' : 'none';
                         if (tooLong && !_doorTooLongToastSent && typeof showToast === 'function') {
-                            showToast(`Cửa tủ mở quá lâu (>${doorAlertThresholdSecs}s).`, 'error');
+                            showToast('Cửa mở quá lâu.', 'error');
                             _doorTooLongToastSent = true;
                         }
                     }, 1000);
+                } else if (Number.isFinite(Number(serverOpenSeconds))) {
+                    // Sync lại timer local theo mốc backend để không lệch Telegram
+                    _doorOpenSince = Date.now() - Math.max(0, Number(serverOpenSeconds)) * 1000;
                 }
             } else {
                 dot.className = 'status-dot status-dot--door-closed';
@@ -2002,8 +2008,14 @@
         
         // Start Server-Sent Events stream for real-time updates
         function startSensorStream() {
+            function ensureSensorPolling() {
+                if (sensorPollingInterval) return;
+                sensorPollingInterval = setInterval(updateSensorData, 1000);
+            }
+
             if (typeof EventSource === 'undefined') {
                 console.warn('EventSource not supported, using polling');
+                ensureSensorPolling();
                 return;
             }
             
@@ -2017,7 +2029,7 @@
                         
                 if (data.source === 'firebase_wokwi' || data.door_state !== undefined) {
                             if (data.door_state !== undefined) {
-                                updateDoorStatus(data.door_state);
+                                updateDoorStatus(data.door_state, data.door_open_seconds, data.door_open_too_long);
                             }
                             if (data.pwm !== undefined) {
                                 console.log(`PWM Làm lạnh: ${data.pwm}/255`);
@@ -2035,14 +2047,14 @@
                         sensorEventSource = null;
                     }
                     // Fallback to polling
-                    setInterval(updateSensorData, 1000);
+                    ensureSensorPolling();
                 };
                 
                 console.log('✓ Real-time sensor stream connected (SSE)');
             } catch (error) {
                 console.warn('Failed to start SSE stream, using polling:', error);
                 // Fallback to polling
-                setInterval(updateSensorData, 1000);
+                ensureSensorPolling();
             }
         }
 
@@ -2604,12 +2616,19 @@ startSensorStream();
         updateOLEDTime();
         // Bật polling inventory định kỳ (giảm tần suất để đỡ tải server/log)
         fetchLiveInventoryOnce();
-        setInterval(fetchLiveInventoryOnce, 2000);
+        if (!inventoryPollingInterval) {
+            inventoryPollingInterval = setInterval(fetchLiveInventoryOnce, 2000);
+        }
         
         function setSystemStatus(idPrefix, state, textIfAny) {
             const dot = document.getElementById(idPrefix + 'Dot');
             const textEl = document.getElementById(idPrefix + 'Text');
             if (!dot || !textEl) return;
+
+            // Tránh cập nhật DOM lặp lại không cần thiết (giảm giật/chớp trên status bar)
+            if (dot.dataset.state === state && (!textIfAny || textEl.textContent === textIfAny)) {
+                return;
+            }
 
             dot.classList.remove('status-dot--ok', 'status-dot--warn', 'status-dot--error', 'status-dot--off', 'status-dot--unknown');
             if (state === 'ok') dot.classList.add('status-dot--ok');
@@ -2617,6 +2636,7 @@ startSensorStream();
             else if (state === 'error') dot.classList.add('status-dot--error');
             else if (state === 'off') dot.classList.add('status-dot--off');
             else dot.classList.add('status-dot--unknown');
+            dot.dataset.state = state || '';
 
             if (textIfAny) {
                 textEl.textContent = textIfAny;
@@ -2629,16 +2649,12 @@ startSensorStream();
                 const response = await fetch('/api/sensors');
                 if (response.ok) {
                     console.log('✓ Connected to Flask API');
-                    document.getElementById('detectionMode').innerHTML = 
-                        '<span class="status-indicator status-online"></span>Sử dụng YOLO thật qua API';
                     setSystemStatus('statusApi', 'ok', 'Hoạt động');
                 } else {
                     throw new Error('API not responding');
                 }
             } catch (error) {
                 console.warn('API connection failed');
-                document.getElementById('detectionMode').innerHTML = 
-                    '<span class="status-indicator status-offline"></span>Mode giả lập (API không khả dụng)';
                 setSystemStatus('statusApi', 'error', 'Không kết nối được');
             }
 
@@ -2689,7 +2705,14 @@ startSensorStream();
         // Live Camera Functions
         function startLiveCamera(source) {
             if (liveCameraActive) {
+                // Nếu đang chạy cùng nguồn -> hành vi cũ: bấm để tắt
+                if (liveCameraMode === source) {
+                    stopLiveCamera();
+                    return;
+                }
+                // Nếu đang chạy nguồn khác -> tự chuyển nguồn (không bắt user bấm lần 2)
                 stopLiveCamera();
+                setTimeout(() => startLiveCamera(source), 700);
                 return;
             }
             
@@ -2734,6 +2757,11 @@ startSensorStream();
                         ? 'Đang phát trực tiếp từ Webcam với AI Detection...'
                         : 'Đang phát trực tiếp từ ESP32-CAM với AI Detection...';
                     document.getElementById('cameraStatus').innerHTML = statusText;
+                    setSystemStatus('statusCamera', 'ok', 'Sẵn sàng');
+                    document.getElementById('detectionMode').innerHTML =
+                        source === 'webcam'
+                            ? '<span class="status-indicator status-online"></span>Đang phát từ Webcam'
+                            : '<span class="status-indicator status-online"></span>Đang phát từ ESP32-CAM';
                     
                     // Start camera stream with detection
                     const feed = document.getElementById('liveCameraFeed');
@@ -2769,6 +2797,9 @@ startSensorStream();
                     const errorMsg = source === 'webcam'
                         ? 'Không thể khởi động Webcam:\n' + err.message + '\n\nKiểm tra:\n- Webcam đã kết nối\n- Đã cấp quyền truy cập camera\n- Không có app khác đang dùng camera'
                         : 'Không thể khởi động ESP32-CAM:\n' + err.message + '\n\nKiểm tra:\n- ESP32-CAM đã kết nối WiFi\n- IP address đúng (192.168.137.14)\n- ESP32-CAM đang chạy';
+                    setSystemStatus('statusCamera', 'off', 'Chưa bật');
+                    document.getElementById('detectionMode').innerHTML =
+                        '<span class="status-indicator status-offline"></span>Camera chưa bật';
                     alert(errorMsg);
                 });
         }
@@ -2794,10 +2825,14 @@ startSensorStream();
                 .then(data => {
                 if (data.success) {
                         console.log('✓ Camera stopped');
+                        setSystemStatus('statusCamera', 'off', 'Chưa bật');
+                        document.getElementById('detectionMode').innerHTML =
+                            '<span class="status-indicator status-offline"></span>Camera chưa bật';
                     }
                 })
                 .catch(err => {
                     console.error('Camera stop error:', err);
+                    setSystemStatus('statusCamera', 'warn', 'Không xác định');
                 });
         }
 
@@ -2811,31 +2846,11 @@ startSensorStream();
             }
         });
 
-        // Check camera status on load - silent check, no alerts
+        // Check camera status on load - chỉ hiển thị "Sẵn sàng" khi user bật camera thành công
         async function checkCameraStatus() {
-            try {
-                const response = await fetch('/api/camera/status');
-                if (!response.ok) {
-                    throw new Error('Status check failed');
-                }
-                const data = await response.json();
-                
-                if (!data.available) {
-                    document.getElementById('detectionMode').innerHTML = 
-                        '<span class="status-indicator status-offline"></span>Camera không khả dụng (click để thử bật)';
-                    setSystemStatus('statusCamera', 'off', 'Không khả dụng');
-                } else {
-                    document.getElementById('detectionMode').innerHTML = 
-                        '<span class="status-indicator status-online"></span>Camera sẵn sàng';
-                    setSystemStatus('statusCamera', 'ok', 'Sẵn sàng');
-                }
-            } catch (error) {
-                // Silent fail - don't show alert, just update status
-                console.warn('Could not check camera status:', error);
-                document.getElementById('detectionMode').innerHTML = 
-                    '<span class="status-indicator status-offline"></span>Chưa kiểm tra camera';
-                setSystemStatus('statusCamera', 'unknown', 'Chưa kiểm tra');
-            }
+            document.getElementById('detectionMode').innerHTML =
+                '<span class="status-indicator status-offline"></span>Camera chưa bật';
+            setSystemStatus('statusCamera', 'off', 'Chưa bật');
         }
         
         // Check camera status after page loads (delay a bit to avoid blocking)
