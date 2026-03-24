@@ -22,6 +22,7 @@ import hmac
 import re
 from queue import Queue
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+import time
 
 app = Flask(__name__)
 
@@ -510,7 +511,7 @@ try:
     from core.firebase_integration import (
         init_firebase, get_latest_sensor_data, get_sensor_history as get_firebase_sensor_history,
         set_light_control, set_peltier_control, set_target_temperature as set_firebase_target_temp,
-        get_control_status as get_firebase_control_status,
+        get_control_status as get_firebase_control_status, set_current_inventory as set_firebase_inventory,
         get_camera_ip as get_firebase_camera_ip
     )
     FIREBASE_AVAILABLE = True
@@ -521,6 +522,7 @@ try:
         FIREBASE_AVAILABLE = False
 except ImportError as e:
     FIREBASE_AVAILABLE = False
+    set_firebase_inventory = None
     get_firebase_camera_ip = None
     print(f"⚠ firebase_integration.py not found - Firebase features disabled: {e}")
 
@@ -699,6 +701,38 @@ inventory = {
     'last_detection': None
 }
 
+_last_inventory_sync_payload = None
+_last_inventory_sync_ts = 0.0
+
+
+def _sync_inventory_to_firebase(force: bool = False):
+    """Đồng bộ inventory hiện tại lên Firebase để OLED/ESP32 đọc cùng dữ liệu với web."""
+    global _last_inventory_sync_payload, _last_inventory_sync_ts
+    if not FIREBASE_AVAILABLE or not set_firebase_inventory:
+        return
+
+    payload = (
+        int(inventory.get('total_items', 0)),
+        int(len(inventory.get('fruits', []))),
+        int(len(inventory.get('foods', []))),
+        int(len(inventory.get('other', []))),
+    )
+
+    now = time.time()
+    changed = payload != _last_inventory_sync_payload
+    if not force and not changed:
+        return
+    if not force and (now - _last_inventory_sync_ts) < 1.0:
+        return
+
+    try:
+        ok = set_firebase_inventory(*payload)
+        if ok:
+            _last_inventory_sync_payload = payload
+            _last_inventory_sync_ts = now
+    except Exception as e:
+        print(f"⚠ Inventory firebase sync error: {e}")
+
 def reset_inventory():
     """Đưa số lượng vật phẩm về 0 (dùng khi tắt camera / xóa ảnh)."""
     inventory['total_items'] = 0
@@ -706,6 +740,7 @@ def reset_inventory():
     inventory['foods'] = []
     inventory['other'] = []
     inventory['last_detection'] = None
+    _sync_inventory_to_firebase(force=True)
 
 # Latest detection details for chatbot/UX
 latest_detection = {
@@ -1026,6 +1061,7 @@ def generate_frames_with_detection():
                     inventory['foods'] = frame_foods
                     inventory['other'] = frame_others
                     inventory['last_detection'] = datetime.now().isoformat()
+                    _sync_inventory_to_firebase()
                 except Exception as e:
                     print(f"⚠ Error updating realtime inventory: {e}")
 
@@ -1896,6 +1932,7 @@ def detect_objects():
         inventory['foods'] = foods
         inventory['other'] = other
         inventory['last_detection'] = datetime.now().isoformat()
+        _sync_inventory_to_firebase()
         
         # Save image to disk
         image_filename = None

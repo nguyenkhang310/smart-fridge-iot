@@ -344,6 +344,49 @@ def get_control_status() -> Dict:
         print(f"⚠ Error reading control status: {e}")
         return {'light': 0, 'peltier': 0}
 
+
+def set_current_inventory(total_items: int, fruit_count: int, food_count: int, other_count: int) -> bool:
+    """
+    Đồng bộ số lượng vật phẩm hiện tại lên Firebase để ESP32/OLED có thể đọc realtime.
+    Ghi theo nhiều key tương thích firmware:
+    - /Current/Items, /Current/Fruits, /Current/Foods, /Current/Others
+    - /Current/Inventory (object)
+    """
+    try:
+        if not firebase_initialized:
+            return False
+
+        total_items = max(0, int(total_items))
+        fruit_count = max(0, int(fruit_count))
+        food_count = max(0, int(food_count))
+        other_count = max(0, int(other_count))
+
+        payloads = [
+            (f"{FIREBASE_DATABASE_URL}/Current/Items.json?auth={FIREBASE_AUTH_TOKEN}", total_items),
+            (f"{FIREBASE_DATABASE_URL}/Current/Fruits.json?auth={FIREBASE_AUTH_TOKEN}", fruit_count),
+            (f"{FIREBASE_DATABASE_URL}/Current/Foods.json?auth={FIREBASE_AUTH_TOKEN}", food_count),
+            (f"{FIREBASE_DATABASE_URL}/Current/Others.json?auth={FIREBASE_AUTH_TOKEN}", other_count),
+            (f"{FIREBASE_DATABASE_URL}/Current/Inventory.json?auth={FIREBASE_AUTH_TOKEN}", {
+                'total_items': total_items,
+                'fruit_count': fruit_count,
+                'food_count': food_count,
+                'other_count': other_count,
+                'updated_at': datetime.now().isoformat(),
+            }),
+        ]
+
+        ok = True
+        for url, data in payloads:
+            try:
+                resp = session.put(url, json=data, timeout=5, verify=True)
+                ok = ok and (resp.status_code == 200)
+            except (requests.exceptions.SSLError, requests.exceptions.RequestException):
+                ok = False
+        return ok
+    except Exception as e:
+        print(f"⚠ Error syncing inventory to Firebase: {e}")
+        return False
+
 # Initialize Firebase on import
 if init_firebase():
     print("✓ Firebase integration module loaded")
