@@ -285,6 +285,38 @@ def set_target_temperature(value: float) -> bool:
         print(f"⚠ Error in set_target_temperature: {e}")
         return False
 
+def get_camera_ip() -> Optional[str]:
+    """
+    Lấy IP của ESP32-CAM từ Firebase (path /CamIP).
+    ESP32-CAM push IP của mình lên đây khi kết nối Wi-Fi thành công.
+    Trả về chuỗi IP (ví dụ: "192.168.1.50") hoặc None nếu không có.
+    """
+    try:
+        if not firebase_initialized:
+            return None
+        url = f"{FIREBASE_DATABASE_URL}/Current/CamIP.json?auth={FIREBASE_AUTH_TOKEN}"
+        try:
+            response = session.get(url, timeout=5, verify=True)
+        except (requests.exceptions.SSLError, requests.exceptions.RequestException) as e:
+            print(f"⚠ Error reading CamIP from Firebase: {e}")
+            return None
+        if response.status_code != 200:
+            return None
+        data = response.json()
+        if data is None:
+            return None
+        # Hỗ trợ cả string lẫn dict {"ip": "..."} tùy firmware ESP32-CAM
+        if isinstance(data, str):
+            return data.strip()
+        if isinstance(data, dict):
+            ip = data.get('ip') or data.get('IP') or data.get('address')
+            return ip.strip() if ip else None
+        return None
+    except Exception as e:
+        print(f"⚠ Error in get_camera_ip: {e}")
+        return None
+
+
 def get_control_status() -> Dict:
     """
     Lấy trạng thái điều khiển hiện tại từ Firebase

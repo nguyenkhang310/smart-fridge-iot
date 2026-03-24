@@ -195,9 +195,24 @@ def _tool_set_temperature(target_temp: float):
     }
 
 # ESP32-CAM 
-ESP32_CAM_IP = "http://192.168.137.16"  # Dán tên IP của ESP32-CAM vào đây
+ESP32_CAM_IP = "http://192.168.137.32"  # Dán tên IP của ESP32-CAM vào đây
 ESP32_CAPTURE_URL = f"{ESP32_CAM_IP}/capture"
 ESP32_VIEW_URL = f"{ESP32_CAM_IP}/view"
+
+# --- CƠ CHẾ TỰ ĐỘNG CẬP NHẬT IP CAMERA ---
+def update_camera_ip(new_ip):
+    global ESP32_CAM_IP, ESP32_CAPTURE_URL, ESP32_VIEW_URL
+    
+    # Đảm bảo IP luôn có tiền tố http://
+    if not str(new_ip).startswith("http://"):
+        new_ip = f"http://{new_ip}"
+        
+    # Nếu IP trên Firebase khác với IP hiện tại thì mới cập nhật
+    if ESP32_CAM_IP != new_ip:
+        ESP32_CAM_IP = new_ip
+        ESP32_CAPTURE_URL = f"{ESP32_CAM_IP}/capture"
+        ESP32_VIEW_URL = f"{ESP32_CAM_IP}/view"
+        print(f"🚀 [AUTO-UPDATE] Đã cập nhật IP Camera mới từ Firebase: {ESP32_CAM_IP}")
 
 # Fruit shelf life information (hạn sử dụng)
 FRUIT_SHELF_LIFE = {
@@ -490,7 +505,8 @@ try:
     from core.firebase_integration import (
         init_firebase, get_latest_sensor_data, get_sensor_history as get_firebase_sensor_history,
         set_light_control, set_peltier_control, set_target_temperature as set_firebase_target_temp,
-        get_control_status as get_firebase_control_status
+        get_control_status as get_firebase_control_status,
+        get_camera_ip as get_firebase_camera_ip
     )
     FIREBASE_AVAILABLE = True
     if init_firebase():
@@ -500,7 +516,54 @@ try:
         FIREBASE_AVAILABLE = False
 except ImportError as e:
     FIREBASE_AVAILABLE = False
+    get_firebase_camera_ip = None
     print(f"⚠ firebase_integration.py not found - Firebase features disabled: {e}")
+
+# --- Background thread: đồng bộ IP camera từ Firebase mỗi 30 giây ---
+_cam_ip_sync_running = False
+_cam_ip_sync_thread = None
+_CAM_IP_SYNC_INTERVAL = 30  # giây
+
+def _camera_ip_sync_worker():
+    """Polling Firebase mỗi 30 giây để lấy IP mới nhất của ESP32-CAM."""
+    global _cam_ip_sync_running
+    while _cam_ip_sync_running:
+        try:
+            if FIREBASE_AVAILABLE and get_firebase_camera_ip:
+                new_ip = get_firebase_camera_ip()
+                if new_ip:
+                    update_camera_ip(new_ip)
+        except Exception as e:
+            print(f"⚠ [CamIP Sync] Lỗi: {e}")
+        # Ngủ theo từng giây để có thể dừng nhanh khi cần
+        for _ in range(_CAM_IP_SYNC_INTERVAL):
+            if not _cam_ip_sync_running:
+                break
+            threading.Event().wait(1.0)
+
+def start_camera_ip_sync():
+    """Khởi động background thread đồng bộ IP camera."""
+    global _cam_ip_sync_running, _cam_ip_sync_thread
+    if not FIREBASE_AVAILABLE or not get_firebase_camera_ip:
+        return
+    # Lấy IP ngay lần đầu khi khởi động
+    try:
+        initial_ip = get_firebase_camera_ip()
+        if initial_ip:
+            update_camera_ip(initial_ip)
+    except Exception as e:
+        print(f"⚠ [CamIP Init] Không lấy được IP từ Firebase: {e}")
+    # Bắt đầu thread background
+    _cam_ip_sync_running = True
+    _cam_ip_sync_thread = threading.Thread(
+        target=_camera_ip_sync_worker, daemon=True, name="CamIPSync"
+    )
+    _cam_ip_sync_thread.start()
+    print("✓ Camera IP sync thread started (interval: 30s)")
+
+# Khởi động sau khi Firebase đã sẵn sàng
+if FIREBASE_AVAILABLE:
+    start_camera_ip_sync()
 
 # Simulated sensor data storage
 sensor_data = {
@@ -2264,6 +2327,10 @@ def firebase_update_worker():
                 if FIREBASE_AVAILABLE:
                     fb_data = get_latest_sensor_data()
                     if fb_data:
+                        cam_ip = fb_data.get('CamIP')
+                        if cam_ip:
+                            update_camera_ip(cam_ip)
+                            
                         temp = fb_data.get('temperature', 0)
                         humi = fb_data.get('humidity', 0)
                         door = fb_data.get('door', 0)
