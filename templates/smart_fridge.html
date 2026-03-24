@@ -2602,9 +2602,9 @@ startSensorStream();
         setInterval(updateOLEDTime, 1000);
         updateSensorData(); // Initial load
         updateOLEDTime();
-        // Bật polling inventory 1 cách định kỳ để panel thống kê luôn bám theo kết quả mới nhất
+        // Bật polling inventory định kỳ (giảm tần suất để đỡ tải server/log)
         fetchLiveInventoryOnce();
-        setInterval(fetchLiveInventoryOnce, 800);
+        setInterval(fetchLiveInventoryOnce, 2000);
         
         function setSystemStatus(idPrefix, state, textIfAny) {
             const dot = document.getElementById(idPrefix + 'Dot');

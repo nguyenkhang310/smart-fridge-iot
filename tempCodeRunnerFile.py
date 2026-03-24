@@ -1,1 +1,0 @@
- buffer = cv2.imencode

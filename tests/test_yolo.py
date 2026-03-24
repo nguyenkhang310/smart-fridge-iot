@@ -8,6 +8,8 @@ import cv2
 import numpy as np
 from PIL import Image
 import requests
+import pytest
+import os
 from io import BytesIO
 
 def test_yolo_local():
@@ -63,13 +65,13 @@ def test_yolo_local():
         print("✓ YOLO Test Completed Successfully!")
         print("=" * 50)
         
-        return True
+        assert True
         
     except Exception as e:
         print(f"\n✗ Error: {e}")
         print("\nPlease install required packages:")
         print("   pip install ultralytics opencv-python")
-        return False
+        pytest.fail(f"YOLO local test failed: {e}")
 
 def test_yolo_with_real_image():
     """Test YOLO with a real image from internet"""
@@ -118,11 +120,11 @@ def test_yolo_with_real_image():
         print("✓ Real Image Test Completed!")
         print("=" * 50)
         
-        return True
+        assert True
         
     except Exception as e:
         print(f"\n✗ Error: {e}")
-        return False
+        pytest.fail(f"YOLO real-image test failed: {e}")
 
 def test_api_endpoint():
     """Test the Flask API endpoint"""
@@ -131,16 +133,19 @@ def test_api_endpoint():
     print("=" * 50)
     
     try:
+        base_url = os.getenv('SMART_FRIDGE_BASE_URL', 'http://localhost:5001').rstrip('/')
         # Check if server is running
         print("\n1. Checking if server is running...")
-        response = requests.get('http://localhost:5000/api/sensors')
+        response = requests.get(f'{base_url}/api/sensors')
         
         if response.status_code == 200:
             print("   ✓ Server is running!")
             print(f"   Sensor Data: {response.json()}")
+        elif response.status_code in (401, 403):
+            pytest.skip("API requires auth in current setup; skipping endpoint smoke test")
         else:
             print("   ✗ Server returned error")
-            return False
+            pytest.fail(f"Server returned status: {response.status_code}")
         
         # Test detection endpoint
         print("\n2. Testing detection endpoint...")
@@ -151,7 +156,7 @@ def test_api_endpoint():
         
         with open('test_image.jpg', 'rb') as f:
             files = {'image': f}
-            response = requests.post('http://localhost:5000/api/detect', files=files)
+            response = requests.post(f'{base_url}/api/detect', files=files)
         
         if response.status_code == 200:
             data = response.json()
@@ -161,21 +166,19 @@ def test_api_endpoint():
             print(f"   Foods: {data.get('food_count', 0)}")
         else:
             print(f"   ✗ Detection failed: {response.text}")
-            return False
+            pytest.fail(f"Detection endpoint failed: {response.text}")
         
         print("\n" + "=" * 50)
         print("✓ API Test Completed!")
         print("=" * 50)
         
-        return True
+        assert True
         
     except requests.exceptions.ConnectionError:
-        print("   ✗ Cannot connect to server")
-        print("   Please start the server first: python app.py")
-        return False
+        pytest.skip("Cannot connect to server at localhost:5000")
     except Exception as e:
         print(f"   ✗ Error: {e}")
-        return False
+        pytest.fail(f"API endpoint test failed: {e}")
 
 if __name__ == '__main__':
     import os

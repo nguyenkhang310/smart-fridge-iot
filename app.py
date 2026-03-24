@@ -1131,6 +1131,12 @@ def index():
     """Serve the main HTML page"""
     return render_template('smart_fridge.html')
 
+
+@app.route('/favicon.ico')
+def favicon():
+    """Avoid noisy 404 for browser favicon request."""
+    return ('', 204)
+
 # (Đã xoá các route phục vụ file tĩnh vì ảnh đã chuyển sang /static/img)
 
 
