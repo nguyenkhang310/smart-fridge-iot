@@ -483,6 +483,29 @@ def set_user_active(user_id, is_active):
         return False
 
 
+def count_admins():
+    """Return number of users with admin role."""
+    try:
+        with get_connection() as (conn, cursor):
+            cursor.execute("SELECT COUNT(*) as cnt FROM users WHERE role = %s", ('admin',))
+            row = cursor.fetchone()
+            return int(row['cnt']) if row else 0
+    except Error as e:
+        print(f"Error counting admins: {e}")
+        return 0
+
+
+def delete_user(user_id):
+    """Delete user by id. Returns True if a row was deleted."""
+    try:
+        with get_connection() as (conn, cursor):
+            cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
+            return cursor.rowcount > 0
+    except Error as e:
+        print(f"Error deleting user: {e}")
+        return False
+
+
 def verify_password(plain_password, password_hash):
     """Verify a plain password against its stored hash."""
     return check_password_hash(password_hash, plain_password)

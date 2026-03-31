@@ -47,9 +47,12 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=int(os.environ.get('S
 CORS(app, supports_credentials=True)
 # Configuration
 UPLOAD_FOLDER = 'uploads'
+# Khoảng nghỉ tối thiểu giữa các lần kéo ảnh ESP32 khi stream (giảm /capture song song với /api/detect)
+ESP32_STREAM_MIN_INTERVAL = float(os.environ.get('ESP32_STREAM_MIN_INTERVAL', '0.5'))
 MODEL_PATH = 'yolov8n.pt'  # Fallback model
 DETECTION_MODEL_PATH = 'models/fruit_detection.pt'  # Model để detect trái cây
 CLASSIFICATION_MODEL_PATH = 'models/fruit_classification.pt'  # Model để phân loại chín/hỏng
+APP_PORT = int(os.environ.get('APP_PORT', '5001'))
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs('models', exist_ok=True)
 
@@ -57,6 +60,11 @@ os.makedirs('models', exist_ok=True)
 # Hard-coded for simplicity (seconds)
 DOOR_OPEN_ALERT_SECONDS = 60
 DOOR_OPEN_ALERT_COOLDOWN_SECONDS = 300
+AUTO_DETECT_ON_DOOR_CLOSE = _env_flag('AUTO_DETECT_ON_DOOR_CLOSE', True)
+DOOR_CLOSE_DETECT_COOLDOWN_SECONDS = float(os.environ.get('DOOR_CLOSE_DETECT_COOLDOWN_SECONDS', '8'))
+DOOR_STATE_DEBOUNCE_SECONDS = float(os.environ.get('DOOR_STATE_DEBOUNCE_SECONDS', '0.7'))
+DETECT_DEDUP_WINDOW_SECONDS = float(os.environ.get('DETECT_DEDUP_WINDOW_SECONDS', '6'))
+DOOR_CLOSE_TRIGGER_DELAY_SECONDS = float(os.environ.get('DOOR_CLOSE_TRIGGER_DELAY_SECONDS', '0.4'))
 
 # Control mode (software=Wokwi/Firebase, hardware=real device)
 CONTROL_MODE_FILE = os.path.join(os.path.dirname(__file__), 'data', 'control_mode.json')
@@ -219,6 +227,9 @@ def update_camera_ip(new_ip):
         ESP32_CAPTURE_URL = f"{ESP32_CAM_IP}/capture"
         ESP32_VIEW_URL = f"{ESP32_CAM_IP}/view"
         print(f"🚀 [AUTO-UPDATE] Đã cập nhật IP Camera mới từ Firebase: {ESP32_CAM_IP}")
+
+# Tránh hai luồng (stream + detect) gọi /capture trên ESP32 cùng lúc
+esp32_capture_lock = threading.Lock()
 
 # Fruit shelf life information (hạn sử dụng)
 FRUIT_SHELF_LIFE = {
@@ -431,28 +442,29 @@ def fetch_image_from_esp32(timeout=5):
     """
     Gọi ESP32-CAM chụp ảnh và lấy ảnh trả về
     """
-    try:
-        # ESP32 chụp ảnh
-        r = requests.get(ESP32_CAPTURE_URL, timeout=timeout)
-        if r.status_code != 200:
-            print("ESP32 capture failed")
+    with esp32_capture_lock:
+        try:
+            # ESP32 chụp ảnh
+            r = requests.get(ESP32_CAPTURE_URL, timeout=timeout)
+            if r.status_code != 200:
+                print("ESP32 capture failed")
+                return None
+
+            # Lấy ảnh vừa chụp
+            img_resp = requests.get(ESP32_VIEW_URL, timeout=timeout)
+            if img_resp.status_code != 200:
+                print("ESP32 view failed")
+                return None
+
+            # Decode ảnh
+            img_array = np.frombuffer(img_resp.content, np.uint8)
+            img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+
+            return img
+
+        except Exception as e:
+            print(f"ESP32 fetch error: {e}")
             return None
-
-        # Lấy ảnh vừa chụp
-        img_resp = requests.get(ESP32_VIEW_URL, timeout=timeout)
-        if img_resp.status_code != 200:
-            print("ESP32 view failed")
-            return None
-
-        # Decode ảnh
-        img_array = np.frombuffer(img_resp.content, np.uint8)
-        img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-
-        return img
-
-    except Exception as e:
-        print(f"ESP32 fetch error: {e}")
-        return None
 
 # Import hardware integration (optional)
 try:
@@ -478,7 +490,7 @@ try:
         save_detection, save_temperature_setting, get_statistics,
         create_user, get_user_by_username, get_user_by_id,
         update_last_login, count_users, verify_password,
-        list_users, set_user_active
+        list_users, set_user_active, count_admins, delete_user
     )
     DB_AVAILABLE = True
 except ImportError as e:
@@ -588,6 +600,103 @@ _door_monitor_running = False
 _door_monitor_thread = None
 _door_open_since = None
 _door_alerted_this_open = False
+_last_door_state_for_autodetect = None
+_last_door_detect_ts = 0.0
+_door_state_lock = threading.Lock()
+_door_raw_state = None
+_door_raw_since_ts = 0.0
+_door_stable_state = 0
+_last_detect_request_ts = 0.0
+_last_detect_trigger = "none"
+
+
+def _is_door_open(door_state) -> bool:
+    """Chuẩn hóa trạng thái cửa từ Firebase/hardware: 1=True=mở, còn lại=đóng."""
+    try:
+        if isinstance(door_state, bool):
+            return bool(door_state)
+        return int(door_state) == 1
+    except (TypeError, ValueError):
+        return False
+
+
+def _debounced_door_state(raw_state):
+    """
+    Debounce trạng thái cửa ở server để tránh nhảy trạng thái theo nhiễu/timing đèn.
+    Chỉ đổi trạng thái khi raw giữ ổn định đủ DOOR_STATE_DEBOUNCE_SECONDS.
+    """
+    global _door_raw_state, _door_raw_since_ts, _door_stable_state
+    now = time.time()
+    try:
+        raw = 1 if int(raw_state) == 1 else 0
+    except (TypeError, ValueError):
+        return _door_stable_state
+
+    with _door_state_lock:
+        if _door_raw_state is None:
+            _door_raw_state = raw
+            _door_raw_since_ts = now
+            _door_stable_state = raw
+            return _door_stable_state
+
+        if raw != _door_raw_state:
+            _door_raw_state = raw
+            _door_raw_since_ts = now
+            return _door_stable_state
+
+        if raw != _door_stable_state and (now - _door_raw_since_ts) >= DOOR_STATE_DEBOUNCE_SECONDS:
+            _door_stable_state = raw
+
+        return _door_stable_state
+
+
+def _trigger_detect_for_door_close():
+    """Gọi detect ở background khi cửa vừa đóng (fallback nếu ESP chưa trigger HTTP)."""
+    global _last_detect_request_ts, _last_detect_trigger
+    now = time.time()
+    if (now - _last_detect_request_ts) < DETECT_DEDUP_WINDOW_SECONDS:
+        print(f"🚪 Door-close fallback skipped: recent detect trigger={_last_detect_trigger}")
+        return
+
+    def _job():
+        detect_url = f"http://127.0.0.1:{APP_PORT}/api/detect"
+        try:
+            if DOOR_CLOSE_TRIGGER_DELAY_SECONDS > 0:
+                time.sleep(DOOR_CLOSE_TRIGGER_DELAY_SECONDS)
+            print("🚪 Door-close fallback: trigger /api/detect source=esp32")
+            resp = requests.post(
+                detect_url,
+                params={'source': 'esp32', 'trigger': 'door_close_fallback'},
+                timeout=120,
+            )
+            print(f"🚪 Door-close fallback: detect HTTP {resp.status_code}")
+        except Exception as e:
+            print(f"⚠ Door-close fallback detect error: {e}")
+
+    threading.Thread(target=_job, daemon=True, name="DoorCloseDetect").start()
+
+
+def _maybe_trigger_door_close_detect(door_state):
+    """Kích hoạt detect theo cạnh mở->đóng, có cooldown chống spam."""
+    global _last_door_state_for_autodetect, _last_door_detect_ts
+    if not AUTO_DETECT_ON_DOOR_CLOSE:
+        return
+
+    is_open = _is_door_open(door_state)
+    prev_open = _last_door_state_for_autodetect
+    _last_door_state_for_autodetect = is_open
+
+    if prev_open is None:
+        return
+    if not (prev_open and not is_open):
+        return
+
+    now = time.time()
+    if (now - _last_door_detect_ts) < DOOR_CLOSE_DETECT_COOLDOWN_SECONDS:
+        return
+
+    _last_door_detect_ts = now
+    _trigger_detect_for_door_close()
 
 def _parse_firebase_sensor_payload(fb_data):
     """Chuẩn hóa dict từ get_latest_sensor_data() (temperature/humidity/...) hoặc key gốc (Temp/Humi/...)."""
@@ -630,7 +739,7 @@ def _apply_firebase_to_sensor_data(fb_data):
             pass
     if v['door'] is not None:
         try:
-            sensor_data['door_state'] = int(v['door'])
+            sensor_data['door_state'] = int(_debounced_door_state(v['door']))
         except (TypeError, ValueError):
             pass
     if v['pwm'] is not None:
@@ -809,7 +918,7 @@ ITEM_NAMES_VI = {
 camera_stream = None
 camera_lock = threading.Lock()
 stream_active = False
-selected_camera_source = "webcam"  # "webcam" or "esp32"
+selected_camera_source = "esp32"  # "webcam" (test only) or "esp32" (default production)
 
 # Firebase real-time update thread
 firebase_update_queue = Queue()
@@ -901,6 +1010,27 @@ def init_camera():
         traceback.print_exc()
         return False
 
+def acquire_image_for_detection(source_override=None):
+    """Lấy khung hình cho /api/detect khi không upload file; theo selected_camera_source hoặc override (vd. ?source=esp32)."""
+    global selected_camera_source, camera_stream
+    src = source_override if source_override in ('webcam', 'esp32') else selected_camera_source
+    if src == 'webcam':
+        with camera_lock:
+            if camera_stream is None or not camera_stream.isOpened():
+                if not init_camera():
+                    return None, 'Webcam not available (init failed)'
+            success, frame = camera_stream.read()
+        if not success or frame is None:
+            return None, 'Failed to read webcam frame'
+        print('Webcam frame acquired for detection')
+        return frame, None
+    print('Fetching image from ESP32-CAM...')
+    img = fetch_image_from_esp32()
+    if img is None:
+        return None, 'Failed to get image from ESP32-CAM'
+    print('ESP32 image received')
+    return img, None
+
 def generate_frames():
     """Generate video frames from ESP32-CAM"""
     global stream_active
@@ -931,9 +1061,8 @@ def generate_frames():
                 print("ESP32 returned None (Check Connection/IP)")
                 threading.Event().wait(1.0) # Đợi 1s tránh spam request làm treo ESP32
 
-            # Quan trọng: ESP32 chụp ảnh tốn thời gian, không cần delay thêm quá nhiều
-            # Nhưng cần nghỉ nhẹ để tránh quá tải mạng
-            threading.Event().wait(0.1) 
+            # Nghỉ giữa các frame để giảm tần suất /capture (tránh đụng /api/detect)
+            threading.Event().wait(ESP32_STREAM_MIN_INTERVAL)
             
         except Exception as e:
             print(f"Error in generate_frames: {e}")
@@ -1124,8 +1253,8 @@ def generate_frames_with_detection():
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
         
-        # delay lâu chút để đỡ nghẽn mạng
-        delay_time = 0.033 if source_type == "webcam" else 0.1 
+        # delay lâu chút để đỡ nghẽn mạng; ESP32 dùng khoảng cách lớn hơn
+        delay_time = 0.033 if source_type == 'webcam' else ESP32_STREAM_MIN_INTERVAL
         threading.Event().wait(delay_time)
 # Don't initialize camera on startup - only when user requests it
 # init_camera()  # Commented out - camera will be initialized on demand
@@ -1222,6 +1351,15 @@ def favicon():
 # (Đã xoá các route phục vụ file tĩnh vì ảnh đã chuyển sang /static/img)
 
 
+@app.route('/uploads/<path:filename>')
+@login_required
+def serve_upload(filename):
+    """Ảnh detection lưu trong uploads/ — dùng dashboard hiển thị sau khi ESP/ API detect."""
+    if '..' in filename or filename.startswith(('/', '\\')):
+        return ('Invalid path', 400)
+    return send_from_directory(UPLOAD_FOLDER, filename)
+
+
 # ===== AUTH API =====
 
 @app.route('/api/auth/login', methods=['POST'])
@@ -1268,6 +1406,9 @@ def api_auth_login():
         session['username'] = user['username']
         session['full_name'] = user.get('full_name') or user['username']
         session['role'] = user.get('role', 'user')
+        # Mỗi lần đăng nhập: không hiển thị ảnh cũ từ phiên trước cho đến khi có detect mới.
+        session['hide_old_detection_on_login'] = True
+        session['login_at'] = datetime.now().isoformat()
         csrf_token = _ensure_csrf_token()
 
         update_last_login(user['id'])
@@ -1398,6 +1539,31 @@ def api_auth_set_user_active(user_id):
         return jsonify({'success': False, 'error': 'Khong the cap nhat trang thai tai khoan'}), 500
     return jsonify({'success': True, 'user_id': user_id, 'is_active': is_active})
 
+
+@app.route('/api/auth/users/<int:user_id>', methods=['DELETE'])
+def api_auth_delete_user(user_id):
+    """Delete a user account (admin only)."""
+    if not session.get('user_id'):
+        return jsonify({'success': False, 'error': 'Chua dang nhap'}), 401
+    if not _valid_csrf_request():
+        return jsonify({'success': False, 'error': 'CSRF token khong hop le'}), 403
+    if session.get('role') != 'admin':
+        return jsonify({'success': False, 'error': 'Khong co quyen truy cap'}), 403
+    if not DB_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Database khong kha dung'}), 503
+    if user_id == session.get('user_id'):
+        return jsonify({'success': False, 'error': 'Khong the xoa tai khoan dang dang nhap'}), 400
+
+    target = get_user_by_id(user_id)
+    if not target:
+        return jsonify({'success': False, 'error': 'Tai khoan khong ton tai'}), 404
+    if target.get('role') == 'admin' and count_admins() <= 1:
+        return jsonify({'success': False, 'error': 'Khong the xoa quan tri vien cuoi cung'}), 400
+
+    ok = delete_user(user_id)
+    if not ok:
+        return jsonify({'success': False, 'error': 'Khong the xoa tai khoan'}), 500
+    return jsonify({'success': True, 'user_id': user_id})
 
 
 @app.route('/api/mode', methods=['GET', 'POST'])
@@ -1747,11 +1913,16 @@ def get_oled_data():
     }
     return jsonify(oled_info)
 
-@app.route('/api/detect', methods=['POST'])
+@app.route('/api/detect', methods=['POST', 'GET'])
+@app.route('/api/detect/trigger', methods=['GET'])
 def detect_objects():
     """YOLO object detection endpoint with advanced fruit ripeness detection"""
+    global _last_detect_request_ts, _last_detect_trigger
     has_rotten = False
     rotten_fruits = set()
+    trigger_name = (request.args.get('trigger') or '').strip() or 'manual'
+    _last_detect_request_ts = time.time()
+    _last_detect_trigger = trigger_name
     # Check if models are available
     if model_detect is None and model is None:
         return jsonify({
@@ -1759,8 +1930,8 @@ def detect_objects():
             'message': 'Please install ultralytics and download model'
         }), 500
     
-    # Nếu có ảnh upload lên 
-    if 'image' in request.files:
+    # Nếu có ảnh upload lên (chỉ POST multipart)
+    if request.method == 'POST' and 'image' in request.files and request.files['image'].filename:
         file = request.files['image']
         image_bytes = file.read()
         nparr = np.frombuffer(image_bytes, np.uint8)
@@ -1768,13 +1939,19 @@ def detect_objects():
         if img is None:
             return jsonify({'error': 'Invalid image upload'}), 400
     else:
-        # Ko có ảnh thì lấy từ ESP32-CAM
-        print("Fetching image from ESP32-CAM...")
-        img = fetch_image_from_esp32()
+        qsrc = request.args.get('source', '').strip().lower()
+        source_override = qsrc if qsrc in ('webcam', 'esp32') else None
+        # ESP trigger thường POST rỗng khi cửa vừa đóng -> luôn ưu tiên ESP32-CAM.
+        if source_override is None and request.method == 'POST':
+            content_length = request.content_length
+            is_empty_trigger = content_length in (None, 0)
+            if is_empty_trigger:
+                source_override = 'esp32'
+        img, err_msg = acquire_image_for_detection(source_override=source_override)
         if img is None:
-            print("ESP32-CAM failed")
-            return jsonify({'error': 'Failed to get image from ESP32-CAM'}), 500
-        print("ESP32 image received")
+            print(err_msg or 'Acquire image failed')
+            msg = err_msg or 'Failed to acquire image for detection'
+            return jsonify({'error': msg, 'message': msg}), 500
 
     DETECT_TIMEOUT = 90
 
@@ -2051,7 +2228,8 @@ def detect_objects():
         _, buffer = cv2.imencode('.jpg', annotated_img)
         img_base64 = base64.b64encode(buffer).decode('utf-8')
         
-        return jsonify({
+        # Trả dict thuần — jsonify() chỉ gọi trên thread request (worker pool không có app context)
+        return {
             'success': True,
             'detections': detections,
             'total_items': len(detections),
@@ -2062,14 +2240,15 @@ def detect_objects():
             'timestamp': datetime.now().isoformat(),
             'session_id': session_id,
             'saved_to_db': DB_AVAILABLE and session_id is not None,
-            'advanced_mode': use_advanced
-        })
+            'advanced_mode': use_advanced,
+        }
 
     try:
         with ThreadPoolExecutor(max_workers=1) as ex:
             future = ex.submit(_run_detection)
             try:
-                return future.result(timeout=DETECT_TIMEOUT)
+                payload = future.result(timeout=DETECT_TIMEOUT)
+                return jsonify(payload)
             except FuturesTimeoutError:
                 return jsonify({'error': 'Timeout', 'message': 'Phân tích ảnh quá lâu, vui lòng thử lại.'}), 504
     except Exception as e:
@@ -2287,11 +2466,39 @@ def reset_inventory_endpoint():
 @app.route('/api/detections/latest', methods=['GET'])
 def get_latest_detections():
     """Get latest detailed detections (for chatbot/UI)."""
+    updated_at = latest_detection.get('updated_at')
+    image_filename = latest_detection.get('image_filename')
+    detections = latest_detection.get('detections', [])
+    hide_old = bool(session.get('hide_old_detection_on_login'))
+    login_at = session.get('login_at')
+
+    if hide_old:
+        # Chỉ cho hiện khi có detect mới hơn thời điểm đăng nhập.
+        is_new_after_login = bool(updated_at and login_at and str(updated_at) > str(login_at))
+        if not is_new_after_login:
+            updated_at = None
+            image_filename = None
+            detections = []
+
+    # Fallback: sau khi restart server, cache RAM có thể rỗng dù DB/uploads đã có ảnh.
+    if (not updated_at) and DB_AVAILABLE and (not hide_old):
+        try:
+            from core.database import get_detection_history as db_get_detection_history
+            rows = db_get_detection_history(1) or []
+            if rows:
+                row = rows[0]
+                updated_at = row.get('created_at').isoformat() if row.get('created_at') else None
+                img_path = row.get('image_path')
+                if img_path:
+                    image_filename = os.path.basename(str(img_path))
+        except Exception as e:
+            print(f"⚠ latest detections fallback error: {e}")
+
     return jsonify({
         'success': True,
-        'updated_at': latest_detection.get('updated_at'),
-        'image_filename': latest_detection.get('image_filename'),
-        'detections': latest_detection.get('detections', [])
+        'updated_at': updated_at,
+        'image_filename': image_filename,
+        'detections': detections
     })
 
 @app.route('/api/stats', methods=['GET'])
@@ -2511,13 +2718,17 @@ def firebase_update_worker():
                         humi = fb_data.get('humidity', 0)
                         door = fb_data.get('door', 0)
                         pwm = fb_data.get('pwm', 0)
+                        # Trigger detect ngay theo cạnh raw door để chụp kịp lúc đèn còn sáng.
+                        _maybe_trigger_door_close_detect(door)
+                        # Debounce chỉ dùng cho hiển thị/trạng thái UI, không làm chậm trigger detect.
+                        stable_door = _debounced_door_state(door)
                         target = sensor_data.get('target_temperature', 4)
                         current_state = f"{temp}_{humi}_{door}_{pwm}_{target}"
                         if current_state != last_state or (current_time - last_push_time) > 1.5:
                             firebase_latest_data = {
                                 'temperature': round(float(temp), 1),
                                 'humidity': int(humi),
-                                'door_state': int(door),
+                                'door_state': int(stable_door),
                                 'pwm': int(pwm),
                                 'target_temperature': sensor_data.get('target_temperature', 4),
                                 'source': 'firebase',
@@ -2632,7 +2843,7 @@ if __name__ == '__main__':
     print("=" * 50)
     print("🧊 Smart Fridge IoT Server Starting...")
     print("=" * 50)
-    print(f"📡 Server will run on: http://localhost:5001")
+    print(f"📡 Server will run on: http://localhost:{APP_PORT}")
     print(f"🤖 YOLO Model: {MODEL_PATH}")
     print(f"📁 Upload folder: {UPLOAD_FOLDER}")
     print(f"📷 Camera stream: /api/camera/stream")
@@ -2666,4 +2877,4 @@ if __name__ == '__main__':
     atexit.register(cleanup)
     
     # Run Flask app
-    app.run(debug=True, use_reloader=False, host='0.0.0.0', port=5001)
+    app.run(debug=True, use_reloader=False, host='0.0.0.0', port=APP_PORT)
