@@ -793,6 +793,53 @@
             margin: 0 auto;
         }
 
+        /* Lịch sử ảnh UI (Gallery Strip) */
+        .history-gallery-strip {
+            display: flex;
+            gap: 12px;
+            overflow-x: auto;
+            padding: 6px 4px 16px 4px;
+            scroll-behavior: smooth;
+        }
+        .history-gallery-strip::-webkit-scrollbar { height: 6px; }
+        .history-gallery-strip::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        
+        .history-item-card {
+            flex: 0 0 auto;
+            width: 90px;
+            background: #fff;
+            border: 2px solid transparent;
+            border-radius: 12px;
+            padding: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .history-item-card:hover, .history-item-card.active {
+            border-color: #3b82f6;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(59,130,246,0.15);
+        }
+        .history-item-card img {
+            width: 100%;
+            height: 70px;
+            object-fit: cover;
+            border-radius: 8px;
+            margin-bottom: 6px;
+            background: #f1f5f9;
+            display: block;
+        }
+        .history-item-time {
+            font-size: 0.7rem;
+            color: #475569;
+            line-height: 1.2;
+            text-align: center;
+            font-weight: 600;
+        }
+
         .camera-container {
             position: relative;
             background: #f5f5f5;
@@ -2069,9 +2116,15 @@
                     </div>
 
                     <div id="aiHistoryPane" class="ai-pane-lab" style="display: none;">
+                        <div id="historyPreviewSection" style="display: none; margin-bottom: 20px;">
+                            <div class="ai-visual-label">Chi tiết ảnh xem lại</div>
+                            <div class="ai-visual-card">
+                                <img id="historyPreviewImg" alt="Chi tiết ảnh lịch sử" onerror="this.closest('#historyPreviewSection').style.display='none';" style="display: block; max-width: 100%; max-height: 380px; width: auto; height: auto; border-radius: 8px; object-fit: contain; margin: 0 auto; background: #020617;">
+                            </div>
+                        </div>
                         <div class="ai-visual-label">Lịch sử ảnh phân tích</div>
-                        <div class="ai-lab-panel">
-                            <div id="detectionHistoryList" style="display:flex; gap:8px; overflow-x:auto; padding-bottom:4px;"></div>
+                        <div class="ai-lab-panel" style="border-color: transparent; padding: 0; background: transparent;">
+                            <div id="detectionHistoryList" class="history-gallery-strip"></div>
                         </div>
                     </div>
                 </div>
@@ -2565,6 +2618,12 @@
                 tF.setAttribute('aria-selected', 'true');
                 tL.setAttribute('aria-selected', 'false');
                 tH.setAttribute('aria-selected', 'false');
+                
+                // Thu hồi lại dữ liệu thực tế ngay lập tức, đè lên data rác nếu người dùng vừa mới bấm bên trang lịch sử.
+                if (typeof pollLatestDetection === 'function') {
+                    lastLatestDetectionAt = null;
+                    pollLatestDetection();
+                }
             } else if (mode === 'history') {
                 paneF.style.display = 'none';
                 paneL.style.display = 'none';
@@ -2575,6 +2634,17 @@
                 tH.setAttribute('aria-selected', 'true');
                 tF.setAttribute('aria-selected', 'false');
                 tL.setAttribute('aria-selected', 'false');
+
+                // Reset panel phải về trạng thái chờ chọn ảnh
+                const _metaEl = document.getElementById('lastCapturePreviewMeta');
+                const _resEl = document.getElementById('detectionResults');
+                if (_metaEl) _metaEl.innerHTML = '<span style="color:#94a3b8;">Chọn ảnh bên trái để xem thông tin chi tiết.</span>';
+                if (_resEl) _resEl.style.display = 'none';
+
+                // Tải và hiển thị lịch sử ngay lập tức
+                if (typeof fetchDetectionHistory === 'function') {
+                    fetchDetectionHistory();
+                }
             } else {
                 paneF.style.display = 'none';
                 paneL.style.display = '';
@@ -2585,6 +2655,12 @@
                 tL.setAttribute('aria-selected', 'true');
                 tF.setAttribute('aria-selected', 'false');
                 tH.setAttribute('aria-selected', 'false');
+
+                // Reset panel phải về trạng thái chờ tải ảnh
+                const _labMeta = document.getElementById('lastCapturePreviewMeta');
+                const _labRes = document.getElementById('detectionResults');
+                if (_labMeta) _labMeta.innerHTML = '<span style="color:#94a3b8;">Tải ảnh lên và nhấn Chạy phân tích.</span>';
+                if (_labRes) _labRes.style.display = 'none';
             }
         }
         const _aiTabFridge = document.getElementById('aiTabFridge');
@@ -2676,49 +2752,41 @@
             const metaEl = document.getElementById('lastCapturePreviewMeta');
             if (!imgEl || !emptyEl || !metaEl) return;
 
-            const clearPreviewHideTimer = () => {
-                if (previewAutoHideTimer) {
-                    clearTimeout(previewAutoHideTimer);
-                    previewAutoHideTimer = null;
-                }
-            };
-            const schedulePreviewAutoHide = () => {
-                clearPreviewHideTimer();
+            // Hủy timer cũ — sẽ khởi động lại từ đầu sau khi ảnh load xong
+            if (previewAutoHideTimer) {
+                clearTimeout(previewAutoHideTimer);
+                previewAutoHideTimer = null;
+            }
+
+            const scheduleAutoHide = () => {
+                if (previewAutoHideTimer) clearTimeout(previewAutoHideTimer);
                 previewAutoHideTimer = setTimeout(() => {
                     imgEl.style.display = 'none';
                     emptyEl.style.display = 'flex';
-                    emptyEl.innerHTML = 'Ảnh preview đã tự ẩn sau vài giây.<br><span style="opacity:0.85;font-size:0.8rem;">Xem lại bên mục Lịch sử ảnh phân tích.</span>';
+                    emptyEl.innerHTML = 'Ảnh đã tự ẩn sau 60 giây.<br><span style="opacity:0.85;font-size:0.8rem;">Xem lại bên mục Lịch sử ảnh.</span>';
+                    if (metaEl) metaEl.innerHTML = '<span style="color:#94a3b8;">Chưa có phiên phân tích mới.</span>';
+                    const resEl = document.getElementById('detectionResults');
+                    if (resEl) resEl.style.display = 'none';
                 }, PREVIEW_AUTO_HIDE_MS);
             };
-            clearPreviewHideTimer();
 
             const fn = data.image_filename;
             if (fn) {
                 const bust = '?t=' + encodeURIComponent(data.updated_at || '');
                 const nextSrc = '/uploads/' + encodeURIComponent(fn) + bust;
-                const prevSrc = imgEl.src || lastGoodPreviewSrc;
                 imgEl.src = nextSrc;
                 imgEl.style.display = 'block';
                 emptyEl.style.display = 'none';
                 imgEl.onerror = function () {
                     console.warn('Preview: không tải /uploads/' + fn);
-                    if (prevSrc) {
-                        // Giữ ảnh preview cũ, không để khung bị trống.
-                        imgEl.src = prevSrc;
-                        imgEl.style.display = 'block';
-                        emptyEl.style.display = 'none';
-                    } else {
-                        imgEl.style.display = 'none';
-                        emptyEl.style.display = 'flex';
-                        emptyEl.innerHTML = 'Không tải được ảnh.<br><span style="opacity:0.85;font-size:0.8rem;">Đăng nhập hoặc kiểm tra file trên server.</span>';
-                    }
+                    imgEl.style.display = 'none';
+                    emptyEl.style.display = 'flex';
+                    emptyEl.innerHTML = 'Không tải được ảnh.<br><span style="opacity:0.85;font-size:0.8rem;">Kiểm tra file trên server.</span>';
                 };
                 imgEl.onload = function () {
                     lastGoodPreviewSrc = imgEl.src;
-                    schedulePreviewAutoHide();
+                    scheduleAutoHide(); // Bắt đầu đếm 60 giây từ khi ảnh hiển thành công
                 };
-                imgEl.onmouseenter = clearPreviewHideTimer;
-                imgEl.onmouseleave = schedulePreviewAutoHide;
             } else {
                 // Không xóa preview hiện có nếu backend tạm thời thiếu image_filename.
                 if (imgEl.src || lastGoodPreviewSrc) {
@@ -2773,49 +2841,136 @@
                     return;
                 }
 
+                let firstCard = null;
                 listEl.innerHTML = '';
                 rows.forEach((row) => {
                     const imgUrl = _historyImageUrlFromPath(row.image_path, row.created_at);
                     if (!imgUrl) return;
-                    const btn = document.createElement('button');
-                    btn.type = 'button';
-                    btn.title = 'Xem ảnh lúc ' + (row.created_at || '');
-                    btn.style.cssText = 'border:none;background:transparent;padding:0;cursor:pointer;flex:0 0 auto;';
-                    btn.innerHTML = '<img src="' + imgUrl + '" alt="history" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid #cbd5e1;">';
-                    btn.onclick = function () {
-                        setLastCapturePreviewFromApi({
-                            image_filename: String(row.image_path).split('/').pop(),
-                            updated_at: row.created_at || new Date().toISOString(),
-                            detections: []
-                        });
-                        setAiWorkbenchTab('fridge');
+                    const card = document.createElement('div');
+                    card.title = 'Xem ảnh lúc ' + (row.created_at || '');
+                    card.className = 'history-item-card';
+                    let timeStr = '';
+                    if (row.created_at) {
+                        try {
+                            const d = new Date(row.created_at);
+                            timeStr = d.toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'}) + '<br>' + d.toLocaleDateString('vi-VN', {day:'2-digit', month:'2-digit'});
+                        } catch(e) {}
+                    }
+                    card.innerHTML = `
+                        <img src="${imgUrl}" alt="history" onerror="this.parentElement.style.display='none';">
+                        ${timeStr ? `<div class="history-item-time">${timeStr}</div>` : ''}
+                    `;
+                    card.onclick = function () {
+                        // Bỏ trạng thái active của các card khác
+                        const cards = document.querySelectorAll('.history-item-card');
+                        cards.forEach(c => c.classList.remove('active'));
+                        card.classList.add('active');
+
+                        // 1. Hiển thị ảnh ở khung preview bên trong tab lịch sử
+                        const prevSec = document.getElementById('historyPreviewSection');
+                        const prevImg = document.getElementById('historyPreviewImg');
+                        if (prevSec && prevImg) {
+                            prevImg.src = imgUrl;
+                            prevSec.style.display = 'block';
+                        }
+
+                        // Cập nhật panel phải khi đang ở tab lịch sử
+                        const metaEl = document.getElementById('lastCapturePreviewMeta');
+                        const resEl = document.getElementById('detectionResults');
+                        const listElInfo = document.getElementById('detectionList');
+
+                        // Định dạng thời gian
+                        let dtStr = row.created_at || new Date().toISOString();
+                        try {
+                            const d = new Date(dtStr);
+                            dtStr = d.toLocaleTimeString('vi-VN') + ' ' + d.toLocaleDateString('vi-VN');
+                        } catch(e) {}
+
+                        const _histTab = document.getElementById('aiTabHistory');
+                        const _onHistoryTab = _histTab && _histTab.getAttribute('aria-selected') === 'true';
+                        if (_onHistoryTab) {
+                            if (metaEl) {
+                                metaEl.innerHTML = 'Thời gian: <strong>' + dtStr + '</strong><br>' +
+                                                   'Số đối tượng: <strong>' + (row.detection_count || row.total_items || 0) + '</strong>';
+                            }
+                            detectedObjects = [];
+                            if (listElInfo) {
+                                listElInfo.innerHTML = '<div style="text-align:center; padding: 20px; color: #64748b; font-size: 0.9em;">Chi tiết từng đối tượng không được lưu trong lịch sử. Khung ảnh hiển thị tổng quan.</div>';
+                            }
+                            if (resEl) resEl.style.display = 'block';
+                        }
                     };
-                    listEl.appendChild(btn);
+                    listEl.appendChild(card);
+                    if (!firstCard) firstCard = card;
                 });
+                
+                // Tự động chọn ảnh đầu tiên CHỈ khi đang ở tab lịch sử
+                const histTab = document.getElementById('aiTabHistory');
+                const isHistoryActive = histTab && histTab.getAttribute('aria-selected') === 'true';
+                if (firstCard && isHistoryActive) {
+                    firstCard.click();
+                }
             } catch (e) {
                 console.warn('fetchDetectionHistory:', e);
             }
         }
 
+        function clearResultsPanel() {
+            const metaEl = document.getElementById('lastCapturePreviewMeta');
+            const resEl = document.getElementById('detectionResults');
+            const imgEl = document.getElementById('lastCapturePreviewImg');
+            const emptyEl = document.getElementById('lastCapturePreviewEmpty');
+            // Chỉ reset nếu đang không hiển thị ảnh thực sự
+            const imgIsVisible = imgEl && imgEl.style.display !== 'none' && imgEl.getAttribute('src');
+            if (imgIsVisible) return;
+            if (metaEl) {
+                metaEl.innerHTML = '<span style="color:#94a3b8;">Chưa có phiên phân tích từ hệ thống.</span>';
+            }
+            if (resEl) resEl.style.display = 'none';
+            if (imgEl) { imgEl.style.display = 'none'; imgEl.removeAttribute('src'); }
+            if (emptyEl) {
+                emptyEl.style.display = 'flex';
+                emptyEl.innerHTML = 'Chưa có ảnh từ lần phân tích nào.<br><span style="opacity: 0.85; font-size: 0.8rem;">Đóng cửa tủ (ESP) hoặc phân tích ảnh ở tab bên cạnh.</span>';
+            }
+        }
+
         async function pollLatestDetection() {
+            // Không can thiệp khi người dùng đang xem Lịch sử ảnh hoặc đang dùng Lab
+            const _histTabEl = document.getElementById('aiTabHistory');
+            const _labTabEl = document.getElementById('aiTabLab');
+            const _onHistory = _histTabEl && _histTabEl.getAttribute('aria-selected') === 'true';
+            const _onLab = _labTabEl && _labTabEl.getAttribute('aria-selected') === 'true';
+            const _onOtherTab = _onHistory || _onLab;
+
             try {
                 const res = await fetch('/api/detections/latest');
                 if (!res.ok) return;
                 const data = await res.json();
-                if (!data.success || !data.updated_at) return;
+                if (!data.success || !data.updated_at) {
+                    if (lastLatestDetectionAt === null && !_onOtherTab) clearResultsPanel();
+                    return;
+                }
                 if (data.updated_at === lastLatestDetectionAt) return;
                 const hasList = data.detections && data.detections.length > 0;
-                if (!hasList && !data.image_filename) return;
+                if (!hasList && !data.image_filename) {
+                    if (lastLatestDetectionAt === null && !_onOtherTab) clearResultsPanel();
+                    return;
+                }
 
                 lastLatestDetectionAt = data.updated_at;
-                detectedObjects = data.detections || [];
-                displayDetectionResults();
-                document.getElementById('detectionResults').style.display = 'block';
-                updateInventoryStats();
-                fetchLiveInventoryOnce();
-                setLastCapturePreviewFromApi(data);
+
+                // Chỉ cập nhật fridge panel khi KHÔNG ở tab khác
+                if (!_onOtherTab) {
+                    detectedObjects = data.detections || [];
+                    displayDetectionResults();
+                    document.getElementById('detectionResults').style.display = 'block';
+                    updateInventoryStats();
+                    fetchLiveInventoryOnce();
+                    setLastCapturePreviewFromApi(data);
+                }
+
+                // Refresh danh sách lịch sử ảnh trong nền (không auto-click khi ở fridge tab)
                 fetchDetectionHistory();
-                setAiWorkbenchTab('fridge');
             } catch (e) {
                 console.warn('pollLatestDetection:', e);
             }
@@ -3120,18 +3275,14 @@ function drawBoundingBoxes() {
             document.getElementById('fileInput').value = '';
             document.getElementById('analyzeBtn').disabled = true;
 
-            try {
-                const res = await fetch('/api/detections/latest');
-                const data = await res.json();
-                if (data.success && data.updated_at && (data.detections || []).length) {
-                    detectedObjects = data.detections;
-                    lastLatestDetectionAt = data.updated_at;
-                    displayDetectionResults();
-                    document.getElementById('detectionResults').style.display = 'block';
-                    setLastCapturePreviewFromApi(data);
-                    setAiWorkbenchTab('fridge');
-                }
-            } catch (e) { /* giữ nguyên bảng hiện tại */ }
+            // Reset panel phải về trạng thái chờ
+            const meta = document.getElementById('lastCapturePreviewMeta');
+            const resEl = document.getElementById('detectionResults');
+            const listEl = document.getElementById('detectionList');
+            if (meta) meta.innerHTML = '<span style="color:#94a3b8;">Tải ảnh lên và nhấn Chạy phân tích.</span>';
+            if (resEl) resEl.style.display = 'none';
+            if (listEl) listEl.innerHTML = '';
+            detectedObjects = [];
 
             updateInventoryStats();
         }

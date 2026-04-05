@@ -2559,12 +2559,43 @@ def get_detection_history():
     
     try:
         from core.database import get_detection_history as db_get_detection_history
+        import time as _time
+        from datetime import timezone as _tz, timedelta as _td
+
         limit = min(request.args.get('limit', 50, type=int), 200)
-        history = db_get_detection_history(limit)
+        
+        # Tính UTC offset của hệ thống (e.g. +07:00 ở Việt Nam)
+        _offset_sec = -(_time.timezone if not _time.daylight else _time.altzone)
+        _local_tz = _tz(_td(seconds=_offset_sec))
+
+        def _fix_row(row):
+            """Chuyển datetime naive → ISO string có timezone để JS parse đúng múi giờ."""
+            r = dict(row)
+            for k, v in r.items():
+                from datetime import datetime as _dt
+                if isinstance(v, _dt) and v.tzinfo is None:
+                    r[k] = v.replace(tzinfo=_local_tz).isoformat()
+                elif isinstance(v, _dt):
+                    r[k] = v.isoformat()
+            return r
+
+        # Fetch more to account for potentially deleted files
+        raw_history = db_get_detection_history(limit * 3)
+        valid_history = []
+        
+        for row in raw_history:
+            if row.get('image_path'):
+                filename = os.path.basename(str(row['image_path']))
+                filepath = os.path.join(UPLOAD_FOLDER, filename)
+                if os.path.exists(filepath):
+                    valid_history.append(_fix_row(row))
+                    if len(valid_history) >= limit:
+                        break
+        
         return jsonify({
             'success': True,
-            'history': history,
-            'count': len(history)
+            'history': valid_history,
+            'count': len(valid_history)
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
