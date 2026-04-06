@@ -322,7 +322,7 @@ app.run(debug=True, use_reloader=False, host='0.0.0.0', port=5001)
 
 ### Dashboard chính
 
-<img src="static/img/dashboard.png" alt="Giao diện dashboard" width="700">
+<img src="Giao diện dashboard.png" alt="Giao diện dashboard" width="700">
 
 - **System Status Bar**: Trạng thái API, Firebase, DB, Camera
 - **Cards cảm biến**: Nhiệt độ, độ ẩm, thanh tiến độ, slider điều chỉnh nhiệt độ
