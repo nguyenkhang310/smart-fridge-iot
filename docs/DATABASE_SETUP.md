@@ -1,8 +1,8 @@
-# 🗄️ Hướng Dẫn Cài Đặt MySQL Database
+# Hướng Dẫn Cài Đặt MySQL Database
 
 Tài liệu này hướng dẫn cách cài đặt và cấu hình MySQL database cho hệ thống Smart Fridge IoT.
 
-## 📋 Mục Lục
+## Mục Lục
 
 1. [Cài Đặt MySQL](#cài-đặt-mysql)
 2. [Cấu Hình Database](#cấu-hình-database)
@@ -46,7 +46,7 @@ sudo systemctl enable mysql
 
 ---
 
-## ⚙️ Cấu Hình Database
+## Cấu Hình Database
 
 ### 1. Đăng nhập MySQL:
 
@@ -78,7 +78,7 @@ EXIT;
 
 ---
 
-## 📦 Cài Đặt Python Package
+## Cài Đặt Python Package
 
 ```bash
 pip install mysql-connector-python
@@ -181,7 +181,7 @@ Bạn sẽ thấy các bảng:
 
 ---
 
-## 📊 Cấu Trúc Database
+## Cấu Trúc Database
 
 ### Bảng `sensors`
 Lưu dữ liệu cảm biến nhiệt độ và độ ẩm:
@@ -229,7 +229,7 @@ Lưu lịch sử thay đổi nhiệt độ:
 
 ---
 
-## 🔍 Truy Vấn Dữ Liệu
+## Truy Vấn Dữ Liệu
 
 ### Xem dữ liệu cảm biến mới nhất:
 
@@ -262,7 +262,7 @@ GROUP BY category;
 
 ---
 
-## ⚠️ Lưu Ý
+## Lưu Ý
 
 1. **Bảo mật**: Không commit file `.env` hoặc `database.py` có password vào Git
 2. **Backup**: Nên backup database định kỳ
@@ -271,7 +271,7 @@ GROUP BY category;
 
 ---
 
-## 🆘 Troubleshooting
+## Troubleshooting
 
 ### Lỗi "Access denied":
 - Kiểm tra username/password
@@ -288,5 +288,5 @@ GROUP BY category;
 
 ---
 
-**Chúc bạn thành công! 🎉**
+**Chúc bạn thành công! **
 
